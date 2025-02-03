@@ -10,3 +10,4 @@ pymongo
 aiosqlite
 httpx
 pytest
+passlib
