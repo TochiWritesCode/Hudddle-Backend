@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+pydantic
+requests
+python-dotenv
+motor
+pymongo
+# If using MongoDB
+#SQLAlchemy==2.0.25  # If using a relational database
+aiosqlite
+httpx
+pytest
