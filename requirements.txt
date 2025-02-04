@@ -11,3 +11,5 @@ aiosqlite
 httpx
 pytest
 passlib
+bcrypt
+firebase-admin
