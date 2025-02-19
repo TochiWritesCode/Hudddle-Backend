@@ -8,7 +8,7 @@ from src.db.models import TaskStatus
 class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1, description="Title of the task")
     description: Optional[str] = None
-    status: TaskStatus = TaskStatus.TODO
+    status: TaskStatus = TaskStatus.PENDING
     due_date: Optional[datetime] = None
     workroom_id: Optional[UUID] = None
     

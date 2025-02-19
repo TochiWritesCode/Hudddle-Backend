@@ -1,14 +1,16 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Query
+from fastapi import Body, APIRouter, HTTPException, Depends, status, Query
 from sqlmodel import select
 from src.db.main import get_session
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.tasks.schema import TaskCreate
-from .schema import WorkroomCreate, WorkroomUpdate
+from .schema import WorkroomCreate, WorkroomTaskCreate, WorkroomUpdate
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from src.db.models import Workroom, User, Task, Leaderboard, TaskStatus
+from src.db.models import Workroom, User, Task, Leaderboard, TaskStatus, WorkroomMemberLink
 from src.auth.dependencies import get_current_user
 from datetime import datetime
+from sqlmodel import delete
+from sqlalchemy.orm import selectinload
 
 workroom_router = APIRouter()
 
@@ -92,21 +94,25 @@ async def add_members_to_workroom(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    workroom = await session.get(Workroom, workroom_id)
+    statement = select(Workroom).options(selectinload(Workroom.members)).where(Workroom.id == workroom_id)
+    result = await session.exec(statement)
+    workroom = result.one_or_none()
     if not workroom:
         raise HTTPException(status_code=404, detail="Workroom not found")
     if workroom.created_by != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to add members to this workroom")
-
     for user_id in user_ids:
         user = await session.get(User, user_id)
         if not user:
             raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
+        if user in workroom.members:
+            continue
         workroom.members.append(user)
 
     await session.commit()
     await session.refresh(workroom)
     return workroom
+
 
 @workroom_router.get("/{workroom_id}/members", response_model=List[User])
 async def get_workroom_members(
@@ -114,7 +120,14 @@ async def get_workroom_members(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    workroom = await session.get(Workroom, workroom_id)
+    statement = (
+        select(Workroom)
+        .options(selectinload(Workroom.members))
+        .where(Workroom.id == workroom_id)
+    )
+    result = await session.exec(statement)
+    workroom = result.one_or_none()
+    
     if not workroom:
         raise HTTPException(status_code=404, detail="Workroom not found")
     if workroom.created_by != current_user.id:
@@ -122,55 +135,38 @@ async def get_workroom_members(
 
     return workroom.members
 
-@workroom_router.delete("/{workroom_id}/members/{user_id}")
-async def remove_member_from_workroom(
+@workroom_router.delete("/{workroom_id}/members", response_model=Dict[str, str])
+async def remove_members_from_workroom(
     workroom_id: UUID,
-    user_id: UUID,
+    user_ids: List[UUID] = Body(..., embed=True),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    workroom = await session.get(Workroom, workroom_id)
+    statement = (
+        select(Workroom)
+        .options(selectinload(Workroom.members))
+        .where(Workroom.id == workroom_id)
+    )
+    result = await session.exec(statement)
+    workroom = result.one_or_none()
+
     if not workroom:
         raise HTTPException(status_code=404, detail="Workroom not found")
     if workroom.created_by != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to remove members from this workroom")
-
-    user = await session.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
-
-    if user in workroom.members:
-        workroom.members.remove(user)
-        await session.commit()
-        await session.refresh(workroom)
-        return {"message": f"User {user_id} removed from workroom {workroom_id}"}
-    else:
-        return {"message": f"User {user_id} is not a member of workroom {workroom_id}"}
-
-
-# Bulk Delete Members
-@workroom_router.delete("/{workroom_id}/members")
-async def bulk_remove_members_from_workroom(
-    workroom_id: UUID,
-    user_ids: List[UUID],
-    session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(get_current_user),
-):
-    workroom = await session.get(Workroom, workroom_id)
-    if not workroom:
-        raise HTTPException(status_code=404, detail="Workroom not found")
-    if workroom.created_by != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to remove members from this workroom")
-
-    for user_id in user_ids:
-        user = await session.get(User, user_id)
-        if user and user in workroom.members:
-            workroom.members.remove(user)
-
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to remove members from this workroom"
+        )
+    stmt = delete(WorkroomMemberLink).where(
+        WorkroomMemberLink.workroom_id == workroom_id,
+        WorkroomMemberLink.user_id.in_(user_ids)
+    )
+    result = await session.execute(stmt)
     await session.commit()
-    await session.refresh(workroom)
+    if result.rowcount == 0:
+        return {"message": f"None of the users {user_ids} were members of workroom {workroom_id}"}
+    
     return {"message": f"Users {user_ids} removed from workroom {workroom_id}"}
-
 
 # Task Management (Related to Workrooms)
 
@@ -203,7 +199,7 @@ async def get_workroom_tasks(
 @workroom_router.post("/{workroom_id}/tasks", response_model=Task, status_code=status.HTTP_201_CREATED)
 async def create_task_in_workroom(
     workroom_id: UUID,
-    task_data: TaskCreate,
+    task_data: WorkroomTaskCreate,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
