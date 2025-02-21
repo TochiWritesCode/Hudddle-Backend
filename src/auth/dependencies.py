@@ -9,6 +9,7 @@ from src.db.main import get_session
 from .service import UserService
 from typing import Any, List
 from src.db.models import User
+from typing import Union
 
 
 user_service = UserService()
@@ -18,7 +19,7 @@ class TokenBearer(HTTPBearer):
     def __init__(self, auto_error=True):
         super().__init__(auto_error=auto_error)
         
-    async def __call__(self, request: Request) -> HTTPAuthorizationCredentials | None:
+    async def __call__(self, request: Request) -> Union[HTTPAuthorizationCredentials, None]:
         creds = await super().__call__(request)
         token = creds.credentials
         token_data = decode_token(token)
