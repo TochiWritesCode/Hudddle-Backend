@@ -14,6 +14,29 @@ class TaskStatus(str, Enum):
     PENDING = "PENDING"
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
+    
+class FriendRequestStatus(str, Enum):
+    pending = "pending"
+    accepted = "accepted"
+    rejected = "rejected"
+    
+    
+class FriendLink(SQLModel, table=True):
+    __tablename__ = "friend_links"
+
+    user_id: UUID = Field(foreign_key="users.id", primary_key=True)
+    friend_id: UUID = Field(foreign_key="users.id", primary_key=True)
+    
+    
+class WorkroomMemberLink(SQLModel, table=True):
+    __tablename__ = "workroom_member_links"
+    
+    workroom_id: Optional[UUID] = Field(
+        default=None, foreign_key="workrooms.id", primary_key=True
+    )
+    user_id: Optional[UUID] = Field(
+        default=None, foreign_key="users.id", primary_key=True
+    )
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
@@ -41,9 +64,32 @@ class User(SQLModel, table=True):
     find_us: Optional[str] = Field(default=None)
     software_used: Optional[str] = Field(default=None)
 
-    workrooms: List["Workroom"] = Relationship(back_populates="members")
+    workrooms: List["Workroom"] = Relationship(
+        back_populates="members", link_model=WorkroomMemberLink
+    )
     created_tasks: List["Task"] = Relationship(back_populates="created_by")
     leaderboards: List["Leaderboard"] = Relationship(back_populates="user")
+    friends: List["User"] = Relationship(
+        link_model=FriendLink,
+        sa_relationship_kwargs={
+            "primaryjoin": "User.id==FriendLink.user_id",
+            "secondaryjoin": "User.id==FriendLink.friend_id",
+        }
+    )
+    
+    
+class FriendRequest(SQLModel, table=True):
+    __tablename__ = "friend_requests"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    sender_id: UUID = Field(foreign_key="users.id", nullable=False)
+    receiver_id: UUID = Field(foreign_key="users.id", nullable=False)
+    status: FriendRequestStatus = Field(
+        default=FriendRequestStatus.pending, nullable=False
+    )
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
 
 class Workroom(SQLModel, table=True):
     __tablename__ = "workrooms"
@@ -56,7 +102,9 @@ class Workroom(SQLModel, table=True):
     description: Optional[str] = Field(default=None)
     created_by: UUID = Field(foreign_key="users.id", nullable=False)
 
-    members: List[User] = Relationship(back_populates="workrooms")
+    members: List[User] = Relationship(
+        back_populates="workrooms", link_model=WorkroomMemberLink
+    )
     tasks: List["Task"] = Relationship(back_populates="workroom")
     leaderboards: List["Leaderboard"] = Relationship(back_populates="workroom")
 
@@ -69,7 +117,7 @@ class Task(SQLModel, table=True):
 
     title: str = Field(index=True, nullable=False)
     description: Optional[str] = Field(default=None)
-    status: TaskStatus = Field(default=TaskStatus.TODO, nullable=False)
+    status: TaskStatus = Field(default=TaskStatus.PENDING, nullable=False)
     due_date: Optional[datetime] = Field(default=None, description="Due date in UTC")
     created_by_id: UUID = Field(foreign_key="users.id", nullable=False)
     workroom_id: Optional[UUID] = Field(foreign_key="workrooms.id", default=None)
@@ -113,12 +161,8 @@ class DailyChallenge(SQLModel, table=True):
     description: str = Field(index=True, nullable=False)
     points: int = Field(default=0, nullable=False)
 
-class Team(SQLModel, table=True):
-    __tablename__ = "teams"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
 
-    name: str = Field(index=True, nullable=False)
-    drop_ins: int = Field(default=0, nullable=False)
+
+
+    

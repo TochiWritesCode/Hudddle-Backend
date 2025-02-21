@@ -175,3 +175,4 @@ cython_debug/
 # New files
 hudddle-project-firebase.json
 backend_venv/
+.vercel
