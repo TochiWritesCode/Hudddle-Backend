@@ -50,6 +50,3 @@ class PasswordResetConfirmModel(BaseModel):
     new_password: str = Field(min_length=6, description="New password for the user")
     confirm_new_password: str = Field(min_length=6, description="Confirmation of the new password")
     
-
-class GoogleUserLogin(BaseModel):
-    id_token: str

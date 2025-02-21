@@ -1,29 +1,27 @@
 from src.mail import mail, create_message
-from fastapi import APIRouter, Depends, status, BackgroundTasks
+from fastapi import APIRouter, Depends, status, BackgroundTasks, Request
+from authlib.integrations.starlette_client import OAuth
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from src.db.models import User
-from .schema import (PasswordResetConfirmModel, GoogleUserLogin,PasswordResetRequestModel, 
+from .schema import (PasswordResetConfirmModel, PasswordResetRequestModel, 
                      UserCreateModel, UserLoginModel, EmailModel, UserUpdateModel)
 from .service import UserService
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from src.db.main import get_session
-# from firebase_admin import auth
-# import firebase_admin
 from .utils import create_access_tokens, create_url_safe_token, decode_url_safe_token, verify_password, generate_password_hash
 from datetime import timedelta, datetime
 from .dependencies import RefreshTokenBearer, AccessTokenBearer, get_current_user, RoleChecker
 from src.db.mongo import add_jti_to_blocklist
 from src.config import Config
+import logging
+
+logger = logging.getLogger(__name__)
 
 auth_router = APIRouter() 
 user_service = UserService()
 role_checker = RoleChecker(["admin", "user"])
-
-# cred = firebase_admin.credentials.Certificate("hudddle-project-firebase.json")
-# firebase_admin.initialize_app(cred)
-
 REFRESH_TOKEN_EXPIRY = 2
 
 
@@ -63,88 +61,58 @@ async def create_user_account(user_data: UserCreateModel,
         "user": new_user,
     }
 
-# @auth_router.post("/google_login")
-# async def google_login(user: GoogleUserLogin, session: AsyncSession = Depends(get_session)):
-#     try:
-#         # 1. Verify the Google ID token (sent by the client)
-#         decoded_token = auth.verify_id_token(user.id_token)
-#         uid = decoded_token["uid"]
-#         email = decoded_token.get("email") # Email might not always be present
+@auth_router.get("/login/{provider}")
+async def login(request: Request, provider:str):
+    if provider not in ["google", "github"]:
+        return {"error": "Unsupported provider"}
+    auth_provider = OAuth.create_client(provider)
+    
+    # Assign redirect_url based on the provider
+    redirect_uri = Config["REDIRECT_URI"]
+    logger.debug(f"Redirect URI: {redirect_uri}")
+    return await auth_provider.authorize_redirect(request, redirect_uri)
 
-#         # 2. Check if the user exists in your database
-#         db_user = await user_service.get_user_by_firebase_uid(uid, session) # New method in UserService
+@auth_router.get("/auth/callback/{provider}")
+async def auth_callback(request: Request, provider: str, session: AsyncSession = Depends(get_session)):
+    try:
+        if provider not in ["google", "github"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported provider")
+        auth_provider = OAuth.create_client(provider)
+        token = await auth_provider.authorize_access_token(request)
+        user_info = (await auth_provider.get("userinfo")).json()
 
-#         if not db_user:
-#             name = decoded_token.get("name")
-#             first_name = None
-#             last_name = None
-            
-#             if name:
-#                 name_parts = name.split()  # Split into first and last name
-#                 first_name = name_parts[0]
-#                 if len(name_parts) > 1:
-#                     last_name = " ".join(name_parts[1:])
-                    
-#             # 3. Create a new user if they don't exist
-#             user_data = {
-#                 "firebase_uid": uid,
-#                 "email": email,
-#                 "username": name,
-#                 "first_name": first_name,
-#                 "last_name": last_name,
-#                 "is_verified": True,
-#                 "password_hash": generate_password_hash("default_password"),
-#                 "badges": [],
-#                 "avatar_url": decoded_token.get("picture")
-#             }
-#             db_user = await user_service.create_user(user_data, session)
-        
-#         # 4. Generate your application's access and refresh tokens
-#         access_token = create_access_tokens(
-#             user_data={
-#                 "email": db_user.email,
-#                 "user_uid": str(db_user.id), # Assuming you have a standard uid in your db
-#                 "role": db_user.role # Get role from your DB
-#             }
-#         )
-#         refresh_token = create_access_tokens(
-#             user_data={
-#                 "email": db_user.email,
-#                 "user_uid": str(db_user.id)
-#             },
-#             refresh=True,
-#             expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
-#         )
+        email = user_info["email"]
+        existing_user = await user_service.get_user_by_email(email, session)
 
-#         return JSONResponse(
-#             content={
-#                 "message": "Login Successful",
-#                 "access token": access_token,
-#                 "refresh token": refresh_token,
-#                 "user": {
-#                     "email": db_user.email,
-#                     "uid": str(db_user.id),
-#                     "username": db_user.username
-#                 }
-#             }
-#         )
+        if not existing_user:
+            # Create new user
+            new_user_data = {
+                "email": email,
+                # "first_name": user_info.get("name"),
+                # "last_name": user_info.get("name"), 
+                "avatar_url": user_info.get("picture"),
+                "password_hash": "oauth_user",
+                "username": user_info.get("name"),
+                "is_verified": True,
+            }
 
-#     except auth.InvalidIdTokenError as e:
-#         raise HTTPException(status_code=400, detail="Invalid ID token")
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+            new_user = await user_service.create_user(User(**new_user_data), session)
 
-# @auth_router.post("/google_verify")
-# async def verify_token(token: str):
-#     try:
-#         # Verify the Firebase ID token
-#         decoded_token = auth.verify_id_token(token)
-#         uid = decoded_token["uid"]
-#         email = decoded_token["email"]
+            return JSONResponse(content={"message": "User created", "user": new_user.dict()})
+        else:
+            # Update existing user
+            update_data = {
+                "first_name": user_info.get("given_name"),
+                "last_name": user_info.get("family_name"),
+                "avatar_url": user_info.get("picture"),
+                "username": user_info.get("name")
+            }
+            updated_user = await user_service.update_user(existing_user, update_data, session)
+            return JSONResponse(content={"message": "User updated", "user": updated_user.dict()})
 
-#         return {"uid": uid, "email": email}
-#     except Exception as e:
-#         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"OAuth callback error: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="OAuth callback failed")
 
 @auth_router.post("/login", status_code=status.HTTP_200_OK)
 async def login_user(user_login_data: UserLoginModel,
