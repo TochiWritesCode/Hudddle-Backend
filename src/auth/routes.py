@@ -146,7 +146,6 @@ async def create_user_account(user_data: UserCreateModel,
 #     except Exception as e:
 #         raise HTTPException(status_code=400, detail=str(e))
 
-
 @auth_router.post("/login", status_code=status.HTTP_200_OK)
 async def login_user(user_login_data: UserLoginModel,
                               session: AsyncSession = Depends(get_session)):
