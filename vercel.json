@@ -1,8 +1,10 @@
 {
+    "version": 1,
     "builds": [
         {
             "src": "src/__init__.py",
-            "use": "@vercel/python"
+            "use": "@vercel/python",
+            "config": { "runtime": "python3.12" }
         }
     ],
     "routes": [
