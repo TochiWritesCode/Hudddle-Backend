@@ -20,6 +20,28 @@ class FriendRequestStatus(str, Enum):
     accepted = "accepted"
     rejected = "rejected"
     
+class LevelCategory(str, Enum):
+    LEADER = "Leader"
+    WORKAHOLIC = "Workaholic"
+    TEAM_PLAYER = "Team Player"
+    SLACKER = "Slacker"
+
+class LevelTier(str, Enum):
+    BEGINNER = "Beginner"
+    INTERMEDIATE = "Intermediate"
+    ADVANCED = "Advanced"
+    EXPERT = "Expert"
+
+class UserLevel(SQLModel, table=True):
+    __tablename__ = "user_levels"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(foreign_key="users.id", nullable=False)
+    level_category: LevelCategory
+    level_tier: LevelTier
+    level_points: int = Field(default=0)
+
+    user: "User" = Relationship(back_populates="levels")
     
 class FriendLink(SQLModel, table=True):
     __tablename__ = "friend_links"
@@ -67,6 +89,7 @@ class User(SQLModel, table=True):
     workrooms: List["Workroom"] = Relationship(
         back_populates="members", link_model=WorkroomMemberLink
     )
+    levels: List["UserLevel"] = Relationship(back_populates="user")
     task_collaborations: List["TaskCollaborator"] = Relationship(back_populates="user")
     created_tasks: List["Task"] = Relationship(back_populates="created_by")
     leaderboards: List["Leaderboard"] = Relationship(back_populates="user")

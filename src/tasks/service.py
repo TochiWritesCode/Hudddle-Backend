@@ -26,6 +26,8 @@ def calculate_task_points(task: Task) -> int:
                 base_points -= 6
             else:
                 base_points = 0
+    elif task.due_date and task.completed_at is None:
+        base_points = 0
     return max(0, base_points)
 
 async def check_daily_completion(current_user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> bool:
