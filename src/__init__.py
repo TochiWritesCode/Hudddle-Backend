@@ -4,6 +4,7 @@ from .daily_challenge.routes import daily_challenge_router
 from .tasks.routes import task_router
 from .friend.routes import friend_router
 from .workroom.routes import workroom_router
+from .achievements.routes import achievement_router
 from .middleware import register_middleware
 from contextlib import asynccontextmanager
 from src.db.main import init_db
@@ -40,7 +41,7 @@ app.include_router(task_router, prefix=f"/api/{version}/tasks", tags=['tasks'])
 app.include_router(workroom_router, prefix=f"/api/{version}/workrooms", tags=['workrooms'])
 app.include_router(friend_router, prefix=f"/api/{version}/friends", tags=['friends'])
 app.include_router(daily_challenge_router, prefix=f"/api/{version}/daily_challenges", tags=['daily_challenges'])
-
+app.include_router(achievement_router, prefix=f"/api/{version}/achievements", tags=['achievements'])
 
 
 

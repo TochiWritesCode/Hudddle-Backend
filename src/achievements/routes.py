@@ -1,52 +1,27 @@
-# from fastapi import FastAPI, HTTPException, Depends
-# from sqlmodel import Session, select
-# from typing import List
-# from datetime import datetime
-# from uuid import UUID, uuid4
-# from models import Task, TaskStatus, Workroom, DailyChallenge, Team, Leaderboard, Achievement, create_datetime_column
-# from database import engine, get_db
+from typing import List
+from src.db.models import Badge, UserBadgeLink
+from fastapi import APIRouter, Depends
+from src.db.main import get_session
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel import select
+from src.db.models import User
+from src.auth.dependencies import get_current_user
 
-# app = FastAPI()
+achievement_router = APIRouter()
 
+# Call check_and_award_badges after updating the user's xp.
 
-# # Achievement Endpoints
+@achievement_router.get("/badges", response_model=List[Badge])
+async def get_all_badges(session: AsyncSession = Depends(get_session)):
+    badges = await session.exec(select(Badge))
+    return badges.all()
 
-# @app.get("/api/achievements", response_model=List[Achievement])
-# def get_achievements(db: Session = Depends(get_db)):
-#     achievements = db.exec(select(Achievement)).all()
-#     return achievements
-
-# @app.get("/api/achievements/{achievement_id}", response_model=Achievement)
-# def get_achievement(achievement_id: UUID, db: Session = Depends(get_db)):
-#     achievement = db.get(Achievement, achievement_id)
-#     if not achievement:
-#         raise HTTPException(status_code=404, detail="Achievement not found")
-#     return achievement
-
-# @app.post("/api/achievements", response_model=Achievement)
-# def create_achievement(achievement: Achievement, db: Session = Depends(get_db)):
-#     db.add(achievement)
-#     db.commit()
-#     db.refresh(achievement)
-#     return achievement
-
-# @app.put("/api/achievements/{achievement_id}", response_model=Achievement)
-# def update_achievement(achievement_id: UUID, achievement_update: Achievement, db: Session = Depends(get_db)):
-#     achievement = db.get(Achievement, achievement_id)
-#     if not achievement:
-#         raise HTTPException(status_code=404, detail="Achievement not found")
-#     for key, value in achievement_update.dict().items():
-#         setattr(achievement, key, value)
-#     db.commit()
-#     db.refresh(achievement)
-#     return achievement
-
-# @app.delete("/api/achievements/{achievement_id}")
-# def delete_achievement(achievement_id: UUID, db: Session = Depends(get_db)):
-#     achievement = db.get(Achievement, achievement_id)
-#     if not achievement:
-#         raise HTTPException(status_code=404, detail="Achievement not found")
-#     db.delete(achievement)
-#     db.commit()
-#     return {"message": "Achievement deleted successfully"}
-
+@achievement_router.get("/users/me/badges", response_model=List[Badge])
+async def get_current_user_badges(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    user_badges = await session.exec(
+        select(Badge).join(UserBadgeLink).where(UserBadgeLink.user_id == current_user.id)
+    )
+    return user_badges.all()
