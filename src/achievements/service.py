@@ -3,7 +3,6 @@ from fastapi import Depends
 from src.db.main import get_session
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
-from uuid import UUID
 from src.auth.dependencies import get_current_user
 
 
