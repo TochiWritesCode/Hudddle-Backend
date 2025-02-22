@@ -1,6 +1,7 @@
 from src.mail import mail, create_message
-from fastapi import APIRouter, Depends, status, BackgroundTasks, Request
-from authlib.integrations.starlette_client import OAuth
+from fastapi import APIRouter, Depends, status, BackgroundTasks
+from starlette.requests import Request
+from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from src.db.models import User
@@ -18,6 +19,18 @@ from src.config import Config
 import logging
 
 logger = logging.getLogger(__name__)
+
+oauth = OAuth()
+oauth.register(
+    name = "google",
+    server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration",
+    client_id = Config.GOOGLE_CLIENT_ID,
+    client_secret = Config.GOOGLE_CLIENT_SECRET,
+    client_kwargs = {
+        "scope": "email openid profile",
+        "redirect_url": Config.REDIRECT_URI
+    }
+)
 
 auth_router = APIRouter() 
 user_service = UserService()
@@ -61,25 +74,17 @@ async def create_user_account(user_data: UserCreateModel,
         "user": new_user,
     }
 
-@auth_router.get("/login/{provider}")
-async def login(request: Request, provider:str):
-    if provider not in ["google", "github"]:
-        return {"error": "Unsupported provider"}
-    auth_provider = OAuth.create_client(provider)
-    
-    # Assign redirect_url based on the provider
-    redirect_uri = Config["REDIRECT_URI"]
-    logger.debug(f"Redirect URI: {redirect_uri}")
-    return await auth_provider.authorize_redirect(request, redirect_uri)
+@auth_router.get("/login")
+async def login(request: Request):
+    url = request.url_for("auth/callback")
+    return await oauth.google.authorize_redirect(request, url)
 
-@auth_router.get("/auth/callback/{provider}")
-async def auth_callback(request: Request, provider: str, session: AsyncSession = Depends(get_session)):
+@auth_router.get("/auth/callback")
+async def auth_callback(request: Request, session: AsyncSession = Depends(get_session)):
     try:
-        if provider not in ["google", "github"]:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported provider")
-        auth_provider = OAuth.create_client(provider)
-        token = await auth_provider.authorize_access_token(request)
-        user_info = (await auth_provider.get("userinfo")).json()
+        token = await oauth.google.authorize_access_token(request)
+        user_info = (await token.get("userinfo")).json()
+        print(user_info)
 
         email = user_info["email"]
         existing_user = await user_service.get_user_by_email(email, session)
@@ -88,8 +93,8 @@ async def auth_callback(request: Request, provider: str, session: AsyncSession =
             # Create new user
             new_user_data = {
                 "email": email,
-                # "first_name": user_info.get("name"),
-                # "last_name": user_info.get("name"), 
+                "first_name": user_info.get("given_name"),
+                "last_name": user_info.get("family_name"), 
                 "avatar_url": user_info.get("picture"),
                 "password_hash": "oauth_user",
                 "username": user_info.get("name"),
@@ -110,7 +115,7 @@ async def auth_callback(request: Request, provider: str, session: AsyncSession =
             updated_user = await user_service.update_user(existing_user, update_data, session)
             return JSONResponse(content={"message": "User updated", "user": updated_user.dict()})
 
-    except Exception as e:
+    except OAuthError as e:
         logger.error(f"OAuth callback error: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="OAuth callback failed")
 
