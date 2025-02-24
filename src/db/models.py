@@ -1,10 +1,12 @@
 from sqlmodel import SQLModel, Field, Column, Relationship, String
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
 from sqlalchemy import DateTime
 from uuid import UUID, uuid4
 import sqlalchemy.dialects.postgresql as pg
+
+
 
 def create_datetime_column():
     return DateTime(timezone=False)
@@ -20,6 +22,28 @@ class FriendRequestStatus(str, Enum):
     accepted = "accepted"
     rejected = "rejected"
     
+class LevelCategory(str, Enum):
+    LEADER = "Leader"
+    WORKAHOLIC = "Workaholic"
+    TEAM_PLAYER = "Team Player"
+    SLACKER = "Slacker"
+
+class LevelTier(str, Enum):
+    BEGINNER = "Beginner"
+    INTERMEDIATE = "Intermediate"
+    ADVANCED = "Advanced"
+    EXPERT = "Expert"
+
+class UserLevel(SQLModel, table=True):
+    __tablename__ = "user_levels"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(foreign_key="users.id", nullable=False)
+    level_category: LevelCategory
+    level_tier: LevelTier
+    level_points: int = Field(default=0)
+
+    user: "User" = Relationship(back_populates="levels")
     
 class FriendLink(SQLModel, table=True):
     __tablename__ = "friend_links"
@@ -37,6 +61,24 @@ class WorkroomMemberLink(SQLModel, table=True):
     user_id: Optional[UUID] = Field(
         default=None, foreign_key="users.id", primary_key=True
     )
+    
+class TaskCollaborator(SQLModel, table=True):
+    __tablename__ = "task_collaborators"
+
+    task_id: UUID = Field(foreign_key="tasks.id", primary_key=True)
+    user_id: UUID = Field(foreign_key="users.id", primary_key=True)
+    invited_by_id: UUID = Field(foreign_key="users.id")
+
+    task: "Task" = Relationship(back_populates="collaborators")
+    invited_by: "User" = Relationship(
+        back_populates="task_collaborations_invited",
+        sa_relationship_kwargs={"foreign_keys": "TaskCollaborator.invited_by_id"}
+    )
+    user: "User" = Relationship(
+        back_populates="task_collaborations_user",
+        sa_relationship_kwargs={"foreign_keys": "TaskCollaborator.user_id"}
+    )
+
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
@@ -67,6 +109,16 @@ class User(SQLModel, table=True):
     workrooms: List["Workroom"] = Relationship(
         back_populates="members", link_model=WorkroomMemberLink
     )
+    levels: List["UserLevel"] = Relationship(back_populates="user")
+    task_collaborations_invited: List["TaskCollaborator"] = Relationship(
+        back_populates="invited_by",
+        sa_relationship_kwargs={"foreign_keys": "TaskCollaborator.invited_by_id"}
+    )
+    task_collaborations_user: List["TaskCollaborator"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"foreign_keys": "TaskCollaborator.user_id"}
+    )
+    streak: Optional["UserStreak"] = Relationship(back_populates="user")
     created_tasks: List["Task"] = Relationship(back_populates="created_by")
     leaderboards: List["Leaderboard"] = Relationship(back_populates="user")
     friends: List["User"] = Relationship(
@@ -108,6 +160,7 @@ class Workroom(SQLModel, table=True):
     tasks: List["Task"] = Relationship(back_populates="workroom")
     leaderboards: List["Leaderboard"] = Relationship(back_populates="workroom")
 
+
 class Task(SQLModel, table=True):
     __tablename__ = "tasks"
 
@@ -119,6 +172,8 @@ class Task(SQLModel, table=True):
     description: Optional[str] = Field(default=None)
     status: TaskStatus = Field(default=TaskStatus.PENDING, nullable=False)
     due_date: Optional[datetime] = Field(default=None, description="Due date in UTC")
+    completed_at: Optional[datetime] = Field(default=None, sa_column=create_datetime_column())
+    collaborators: List["TaskCollaborator"] = Relationship(back_populates="task")
     created_by_id: UUID = Field(foreign_key="users.id", nullable=False)
     workroom_id: Optional[UUID] = Field(foreign_key="workrooms.id", default=None)
     created_by: "User" = Relationship(back_populates="created_tasks")
@@ -146,6 +201,7 @@ class Leaderboard(SQLModel, table=True):
     workroom_id: UUID = Field(foreign_key="workrooms.id", nullable=False)
     user_id: UUID = Field(foreign_key="users.id", nullable=False)
     score: int = Field(default=0, nullable=False)
+    teamwork_score: int = Field(default=0, nullable=False)
     rank: Optional[int] = Field(default=None)
 
     workroom: Workroom = Relationship(back_populates="leaderboards")
@@ -161,8 +217,48 @@ class DailyChallenge(SQLModel, table=True):
     description: str = Field(index=True, nullable=False)
     points: int = Field(default=0, nullable=False)
 
+class UserDailyChallenge(SQLModel, table=True):
+    __tablename__ = "user_daily_challenges"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(foreign_key="users.id", nullable=False)
+    daily_challenge_id: UUID = Field(foreign_key="daily_challenges.id", nullable=False)
+    accepted: bool = Field(default=False)
+    completed: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+
+    user: "User" = Relationship()
+    daily_challenge: "DailyChallenge" = Relationship()
+    
+    
+class UserStreak(SQLModel, table=True):
+    __tablename__ = "user_streaks"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(foreign_key="users.id", nullable=False)
+    current_streak: int = Field(default=0)
+    last_active_date: Optional[date] = Field(default=None)
+    highest_streak: int = Field(default=0)
+
+    user: "User" = Relationship(back_populates="streak")
 
 
+class Badge(SQLModel, table=True):
+    __tablename__ = "badges"
 
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+
+    name: str = Field(index=True, nullable=False)
+    description: Optional[str] = Field(default=None)
+    image_url: Optional[str] = Field(default=None)
+
+class UserBadgeLink(SQLModel, table=True):
+    __tablename__ = "user_badge_links"
+
+    user_id: UUID = Field(foreign_key="users.id", primary_key=True)
+    badge_id: UUID = Field(foreign_key="badges.id", primary_key=True)
 
     

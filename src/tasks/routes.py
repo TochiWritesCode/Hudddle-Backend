@@ -1,16 +1,65 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, status
 from src.db.main import get_session
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select
+from sqlmodel import select, and_
+from datetime import datetime, date
 from typing import List
 from uuid import UUID
+from src.achievements.service import check_and_award_badges, update_user_streak
+from .service import calculate_task_points, check_daily_completion, get_friends_working_on_task
 from .schema import TaskCreate, TaskUpdate
-from src.db.models import Task, User, Workroom
+from src.db.models import FriendLink, Task, TaskCollaborator, TaskStatus, User, Workroom
 from src.auth.dependencies import get_current_user
 
 task_router = APIRouter()
 
 # Task Endpoints
+
+
+@task_router.post("/{task_id}/invite-friend/{friend_id}", status_code=status.HTTP_201_CREATED)
+async def invite_friend_to_task(
+    task_id: UUID,
+    friend_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    task = await session.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    friend = await session.get(User, friend_id)
+    if not friend:
+        raise HTTPException(status_code=404, detail="Friend not found")
+
+    # Check if they are friends
+    friendship_check = await session.exec(
+        select(FriendLink).where(
+            (FriendLink.user_id == current_user.id) & (FriendLink.friend_id == friend_id)
+        )
+    )
+    if not friendship_check.first():
+        raise HTTPException(status_code=400, detail="Users are not friends")
+
+    # Check if the friend is already invited
+    existing_collaboration = await session.exec(
+        select(TaskCollaborator).where(
+            TaskCollaborator.task_id == task_id,
+            TaskCollaborator.user_id == friend_id,
+        )
+    )
+    if existing_collaboration.first():
+        raise HTTPException(status_code=400, detail="Friend is already invited to this task")
+
+    # Create the collaboration
+    collaboration = TaskCollaborator(
+        task_id=task_id,
+        user_id=friend_id,
+        invited_by_id=current_user.id,
+    )
+    session.add(collaboration)
+    await session.commit()
+    await session.refresh(collaboration)
+    return {"message": f"Friend {friend.username} invited to task {task.title}"}
 
 @task_router.get("/api/tasks", response_model=List[Task])
 async def get_tasks(session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
@@ -83,8 +132,35 @@ async def update_task(
 
     for key, value in task_update.dict(exclude_unset=True).items():
         setattr(task, key, value)
+
+    if task.status == TaskStatus.COMPLETED and task_update.status != TaskStatus.COMPLETED:
+        task.completed_at = datetime.utcnow()
+        points = calculate_task_points(task)
+        current_user.xp += points
+
+        # Friend Invitation Points
+        friends_working = await get_friends_working_on_task(task_id, current_user.id, session)
+        for friend_id in friends_working:
+            friend = await session.get(User, friend_id)
+            if friend:
+                friend.xp += 5
+                session.add(friend)
+
+        # Daily Task Completion Bonus
+        if await check_daily_completion(current_user.id, session):
+            today_tasks = await session.exec(select(Task).where(Task.created_by_id == current_user.id, and_(Task.created_at >= datetime.combine(date.today(), datetime.min.time()), Task.created_at <= datetime.combine(date.today(), datetime.max.time())), Task.status == TaskStatus.COMPLETED))
+            current_user.xp += (len(today_tasks.all()) * 2) + 10
+
+        session.add(current_user)
+        # Call check_and_award_badges after updating xp
+        await check_and_award_badges(current_user, session)
+        
+        # Update User Streak
+        await update_user_streak(current_user.id, session)
+
     await session.commit()
     await session.refresh(task)
+    await session.refresh(current_user)
 
     return task
 

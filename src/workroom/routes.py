@@ -2,7 +2,7 @@ from fastapi import Body, APIRouter, HTTPException, Depends, status, Query
 from sqlmodel import select
 from src.db.main import get_session
 from sqlmodel.ext.asyncio.session import AsyncSession
-from src.tasks.schema import TaskCreate
+from .service import update_workroom_leaderboard
 from .schema import WorkroomCreate, WorkroomTaskCreate, WorkroomUpdate
 from typing import List, Optional, Dict, Any
 from uuid import UUID
@@ -235,23 +235,15 @@ async def get_workroom_leaderboard(
     if current_user not in workroom.members:
         raise HTTPException(status_code=403, detail="Not authorized to view the leaderboard for this workroom")
 
+    await update_workroom_leaderboard(workroom_id, session)
 
-    leaderboard_entries = await session.exec(
-        select(Leaderboard, User)
-        .join(User)
-        .where(Leaderboard.workroom_id == workroom_id)
-    )
+    leaderboard_entries = await session.exec(select(Leaderboard).where(Leaderboard.workroom_id == workroom_id).order_by(Leaderboard.rank))
+    leaderboard_entries = leaderboard_entries.all()
 
-    leaderboard_data: List[Dict[str, Any]] = []
-    for leaderboard, user in leaderboard_entries:
-        leaderboard_data.append({
-            "user_id": user.id,
-            "username": user.username,
-            "score": leaderboard.score,
-            "rank": leaderboard.rank,
-            "avatar_url": user.avatar_url,
-            "first_name": user.first_name,
-            "last_name": user.last_name
-            # ... other user details you want to include
-        })
-    return leaderboard_data
+    return [{
+        "user_id": entry.user_id,
+        "username": entry.user.user.username,
+        "score": entry.score,
+        "teamwork_score": entry.teamwork_score,
+        "rank": entry.rank,
+    } for entry in leaderboard_entries]

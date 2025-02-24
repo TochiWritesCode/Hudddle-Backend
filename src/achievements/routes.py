@@ -1,52 +1,60 @@
-# from fastapi import FastAPI, HTTPException, Depends
-# from sqlmodel import Session, select
-# from typing import List
-# from datetime import datetime
-# from uuid import UUID, uuid4
-# from models import Task, TaskStatus, Workroom, DailyChallenge, Team, Leaderboard, Achievement, create_datetime_column
-# from database import engine, get_db
+from typing import List, Dict, Any
+from src.db.models import Badge, UserBadgeLink, UserLevel, UserStreak
+from fastapi import APIRouter, Depends
+from src.db.main import get_session
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel import select
+from .service import update_user_levels
+from src.db.models import User
+from src.auth.dependencies import get_current_user
 
-# app = FastAPI()
+achievement_router = APIRouter()
 
 
-# # Achievement Endpoints
+@achievement_router.get("/badges", response_model=List[Badge])
+async def get_all_badges(session: AsyncSession = Depends(get_session)):
+    badges = await session.exec(select(Badge))
+    return badges.all()
 
-# @app.get("/api/achievements", response_model=List[Achievement])
-# def get_achievements(db: Session = Depends(get_db)):
-#     achievements = db.exec(select(Achievement)).all()
-#     return achievements
+@achievement_router.get("/users/me/badges", response_model=List[Badge])
+async def get_current_user_badges(
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    user_badges = await session.exec(
+        select(Badge).join(UserBadgeLink).where(UserBadgeLink.user_id == current_user.id)
+    )
+    return user_badges.all()
 
-# @app.get("/api/achievements/{achievement_id}", response_model=Achievement)
-# def get_achievement(achievement_id: UUID, db: Session = Depends(get_db)):
-#     achievement = db.get(Achievement, achievement_id)
-#     if not achievement:
-#         raise HTTPException(status_code=404, detail="Achievement not found")
-#     return achievement
+@achievement_router.get("/users/me/levels", response_model=List[Dict[str, Any]])
+async def get_user_levels(current_user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    await update_user_levels(current_user.id, session) #update levels before returning them.
+    user_levels = await session.exec(select(UserLevel).where(UserLevel.user_id == current_user.id))
+    return [{
+        "category": level.level_category,
+        "tier": level.level_tier,
+        "points": level.level_points,
+    } for level in user_levels.all()]
 
-# @app.post("/api/achievements", response_model=Achievement)
-# def create_achievement(achievement: Achievement, db: Session = Depends(get_db)):
-#     db.add(achievement)
-#     db.commit()
-#     db.refresh(achievement)
-#     return achievement
-
-# @app.put("/api/achievements/{achievement_id}", response_model=Achievement)
-# def update_achievement(achievement_id: UUID, achievement_update: Achievement, db: Session = Depends(get_db)):
-#     achievement = db.get(Achievement, achievement_id)
-#     if not achievement:
-#         raise HTTPException(status_code=404, detail="Achievement not found")
-#     for key, value in achievement_update.dict().items():
-#         setattr(achievement, key, value)
-#     db.commit()
-#     db.refresh(achievement)
-#     return achievement
-
-# @app.delete("/api/achievements/{achievement_id}")
-# def delete_achievement(achievement_id: UUID, db: Session = Depends(get_db)):
-#     achievement = db.get(Achievement, achievement_id)
-#     if not achievement:
-#         raise HTTPException(status_code=404, detail="Achievement not found")
-#     db.delete(achievement)
-#     db.commit()
-#     return {"message": "Achievement deleted successfully"}
-
+@achievement_router.get("/levels", response_model=List[Dict[str, Any]])
+async def get_all_user_levels(session: AsyncSession = Depends(get_session)):
+    user_levels = await session.exec(select(UserLevel))
+    return [{
+        "user_id": level.user_id,
+        "category": level.level_category,
+        "tier": level.level_tier,
+        "points": level.level_points,
+    } for level in user_levels.all()]
+    
+    
+@achievement_router.get("/users/me/streak", response_model=Dict[str, Any])
+async def get_user_streak(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    user_streak = await session.exec(select(UserStreak).where(UserStreak.user_id == user.id))
+    user_streak = user_streak.first()
+    if not user_streak:
+        return {"current_streak": 0, "highest_streak": 0, "last_active_date": None}
+    return {
+        "current_streak": user_streak.current_streak,
+        "highest_streak": user_streak.highest_streak,
+        "last_active_date": user_streak.last_active_date,
+    }
