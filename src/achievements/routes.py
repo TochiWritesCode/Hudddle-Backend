@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-from src.db.models import Badge, UserBadgeLink, UserLevel
+from src.db.models import Badge, UserBadgeLink, UserLevel, UserStreak
 from fastapi import APIRouter, Depends
 from src.db.main import get_session
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -45,3 +45,16 @@ async def get_all_user_levels(session: AsyncSession = Depends(get_session)):
         "tier": level.level_tier,
         "points": level.level_points,
     } for level in user_levels.all()]
+    
+    
+@achievement_router.get("/users/me/streak", response_model=Dict[str, Any])
+async def get_user_streak(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    user_streak = await session.exec(select(UserStreak).where(UserStreak.user_id == user.id))
+    user_streak = user_streak.first()
+    if not user_streak:
+        return {"current_streak": 0, "highest_streak": 0, "last_active_date": None}
+    return {
+        "current_streak": user_streak.current_streak,
+        "highest_streak": user_streak.highest_streak,
+        "last_active_date": user_streak.last_active_date,
+    }

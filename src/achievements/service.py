@@ -1,6 +1,7 @@
-from src.db.models import LevelCategory, LevelTier, Task, TaskCollaborator, TaskStatus, User, Badge, UserBadgeLink, UserLevel
+from src.db.models import LevelCategory, LevelTier, Task, TaskCollaborator, TaskStatus, User, Badge, UserBadgeLink, UserLevel, UserStreak
 from fastapi import Depends
 from src.db.main import get_session
+from datetime import date, timedelta
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from src.auth.dependencies import get_current_user
@@ -124,3 +125,27 @@ async def update_user_levels(current_user: User = Depends(get_current_user), ses
     await update_user_level(current_user.id, LevelCategory.SLACKER, slacker_points, session)
 
 
+async def update_user_streak(current_user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)):
+    today = date.today()
+    user_streak = await session.exec(select(UserStreak).where(UserStreak.user_id == current_user.id))
+    user_streak = user_streak.first()
+    if not user_streak:
+        user_streak = UserStreak(user_id=current_user.id)
+        session.add(user_streak)
+        await session.commit()
+        await session.refresh(user_streak)
+
+    if user_streak.last_active_date == today:
+        return  # Already updated today
+
+    if user_streak.last_active_date == today - timedelta(days=1):
+        user_streak.current_streak += 1
+    else:
+        user_streak.current_streak = 1
+
+    user_streak.last_active_date = today
+
+    if user_streak.current_streak > user_streak.highest_streak:
+        user_streak.highest_streak = user_streak.current_streak
+
+    await session.commit()

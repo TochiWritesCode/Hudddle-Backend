@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, Column, Relationship, String
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
 from sqlalchemy import DateTime
 from uuid import UUID, uuid4
@@ -91,6 +91,7 @@ class User(SQLModel, table=True):
     )
     levels: List["UserLevel"] = Relationship(back_populates="user")
     task_collaborations: List["TaskCollaborator"] = Relationship(back_populates="user")
+    streak: Optional["UserStreak"] = Relationship(back_populates="user")
     created_tasks: List["Task"] = Relationship(back_populates="created_by")
     leaderboards: List["Leaderboard"] = Relationship(back_populates="user")
     friends: List["User"] = Relationship(
@@ -199,6 +200,32 @@ class DailyChallenge(SQLModel, table=True):
 
     description: str = Field(index=True, nullable=False)
     points: int = Field(default=0, nullable=False)
+
+class UserDailyChallenge(SQLModel, table=True):
+    __tablename__ = "user_daily_challenges"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(foreign_key="users.id", nullable=False)
+    daily_challenge_id: UUID = Field(foreign_key="daily_challenges.id", nullable=False)
+    accepted: bool = Field(default=False)
+    completed: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+
+    user: "User" = Relationship()
+    daily_challenge: "DailyChallenge" = Relationship()
+    
+    
+class UserStreak(SQLModel, table=True):
+    __tablename__ = "user_streaks"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(foreign_key="users.id", nullable=False)
+    current_streak: int = Field(default=0)
+    last_active_date: Optional[date] = Field(default=None)
+    highest_streak: int = Field(default=0)
+
+    user: "User" = Relationship(back_populates="streak")
 
 
 class Badge(SQLModel, table=True):
