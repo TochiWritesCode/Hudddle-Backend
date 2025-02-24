@@ -6,6 +6,8 @@ from sqlalchemy import DateTime
 from uuid import UUID, uuid4
 import sqlalchemy.dialects.postgresql as pg
 
+
+
 def create_datetime_column():
     return DateTime(timezone=False)
 
@@ -59,6 +61,24 @@ class WorkroomMemberLink(SQLModel, table=True):
     user_id: Optional[UUID] = Field(
         default=None, foreign_key="users.id", primary_key=True
     )
+    
+class TaskCollaborator(SQLModel, table=True):
+    __tablename__ = "task_collaborators"
+
+    task_id: UUID = Field(foreign_key="tasks.id", primary_key=True)
+    user_id: UUID = Field(foreign_key="users.id", primary_key=True)
+    invited_by_id: UUID = Field(foreign_key="users.id")
+
+    task: "Task" = Relationship(back_populates="collaborators")
+    invited_by: "User" = Relationship(
+        back_populates="task_collaborations_invited",
+        sa_relationship_kwargs={"foreign_keys": "TaskCollaborator.invited_by_id"}
+    )
+    user: "User" = Relationship(
+        back_populates="task_collaborations_user",
+        sa_relationship_kwargs={"foreign_keys": "TaskCollaborator.user_id"}
+    )
+
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
@@ -90,7 +110,14 @@ class User(SQLModel, table=True):
         back_populates="members", link_model=WorkroomMemberLink
     )
     levels: List["UserLevel"] = Relationship(back_populates="user")
-    task_collaborations: List["TaskCollaborator"] = Relationship(back_populates="user")
+    task_collaborations_invited: List["TaskCollaborator"] = Relationship(
+        back_populates="invited_by",
+        sa_relationship_kwargs={"foreign_keys": "TaskCollaborator.invited_by_id"}
+    )
+    task_collaborations_user: List["TaskCollaborator"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"foreign_keys": "TaskCollaborator.user_id"}
+    )
     streak: Optional["UserStreak"] = Relationship(back_populates="user")
     created_tasks: List["Task"] = Relationship(back_populates="created_by")
     leaderboards: List["Leaderboard"] = Relationship(back_populates="user")
@@ -132,18 +159,7 @@ class Workroom(SQLModel, table=True):
     )
     tasks: List["Task"] = Relationship(back_populates="workroom")
     leaderboards: List["Leaderboard"] = Relationship(back_populates="workroom")
-    
 
-class TaskCollaborator(SQLModel, table=True):
-    __tablename__ = "task_collaborators"
-
-    task_id: UUID = Field(foreign_key="tasks.id", primary_key=True)
-    user_id: UUID = Field(foreign_key="users.id", primary_key=True)
-    invited_by_id: UUID = Field(foreign_key="users.id")
-
-    task: "Task" = Relationship(back_populates="collaborators")
-    user: "User" = Relationship()
-    invited_by: "User" = Relationship()
 
 class Task(SQLModel, table=True):
     __tablename__ = "tasks"
