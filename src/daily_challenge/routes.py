@@ -21,10 +21,10 @@ class ChallengeResponse(BaseModel):
 
 async def generate_daily_challenges() -> List[str]:
     # ... (Fetch user levels)
-    prompt = f"Generate 4 unique daily challenges for a user to boost their Leader, Workaholic, Team Player, and Slacker levels in an online collaborative remote workroom. 
+    prompt = f"""Generate 4 unique daily challenges for a user to boost their Leader, Workaholic, Team Player, and Slacker levels in an online collaborative remote workroom. 
         The challenges should be action-oriented and achievable within a day. 
         Provide each challenge as a task description. 
-        Respond with a json object that has a key called challenges and the value is a list of strings."
+        Respond with a json object that has a key called challenges and the value is a list of strings."""
     response = openai.Completion.create(
         engine="text-davinci-003",  # Or another suitable engine
         prompt=prompt,

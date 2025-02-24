@@ -139,11 +139,11 @@ class TaskCollaborator(SQLModel, table=True):
 
     task_id: UUID = Field(foreign_key="tasks.id", primary_key=True)
     user_id: UUID = Field(foreign_key="users.id", primary_key=True)
-    invited_by_id: UUID = Field(foreign_key="users.id") # Who invited the collaborator
+    invited_by_id: UUID = Field(foreign_key="users.id")
 
     task: "Task" = Relationship(back_populates="collaborators")
     user: "User" = Relationship()
-    invited_by: "User" = Relationship(foreign_keys=[invited_by_id])
+    invited_by: "User" = Relationship()
 
 class Task(SQLModel, table=True):
     __tablename__ = "tasks"

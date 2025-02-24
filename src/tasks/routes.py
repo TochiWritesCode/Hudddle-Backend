@@ -5,7 +5,7 @@ from sqlmodel import select, and_
 from datetime import datetime, date
 from typing import List
 from uuid import UUID
-from achievements.service import check_and_award_badges, update_user_streak
+from src.achievements.service import check_and_award_badges, update_user_streak
 from .service import calculate_task_points, check_daily_completion, get_friends_working_on_task
 from .schema import TaskCreate, TaskUpdate
 from src.db.models import FriendLink, Task, TaskCollaborator, TaskStatus, User, Workroom
