@@ -1,7 +1,7 @@
 from src.mail import mail, create_message
+import firebase_admin
+from firebase_admin import auth, credentials
 from fastapi import APIRouter, Depends, status, BackgroundTasks
-from starlette.requests import Request
-from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from src.db.models import User
@@ -11,31 +11,65 @@ from .service import UserService
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from src.db.main import get_session
-from .utils import create_access_tokens, create_url_safe_token, decode_url_safe_token, verify_password, generate_password_hash
+from .utils import (create_access_tokens, create_url_safe_token, 
+                    decode_url_safe_token, verify_password, generate_password_hash)
 from datetime import timedelta, datetime
 from .dependencies import RefreshTokenBearer, AccessTokenBearer, get_current_user, RoleChecker
 from src.db.mongo import add_jti_to_blocklist
 from src.config import Config
-import logging
 
-logger = logging.getLogger(__name__)
-
-oauth = OAuth()
-oauth.register(
-    name = "google",
-    server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration",
-    client_id = Config.GOOGLE_CLIENT_ID,
-    client_secret = Config.GOOGLE_CLIENT_SECRET,
-    client_kwargs = {
-        "scope": "email openid profile",
-        "redirect_url": Config.REDIRECT_URI
-    }
-)
 
 auth_router = APIRouter() 
 user_service = UserService()
 role_checker = RoleChecker(["admin", "user"])
 REFRESH_TOKEN_EXPIRY = 2
+
+# Initialize Firebase Admin SDK
+cred = credentials.Certificate("hudddle-project-firebase.json")
+firebase_admin.initialize_app(cred)
+
+@auth_router.post("/firebase_login", status_code=status.HTTP_200_OK)
+async def firebase_login(id_token: str, session: AsyncSession = Depends(get_session)):
+    try:
+        decoded_token = auth.verify_id_token(id_token)
+        uid = decoded_token['uid']
+        email = decoded_token['email']
+        name = decoded_token.get('name')
+        picture = decoded_token.get('picture')
+
+        user = await user_service.get_user_by_email(email, session)
+
+        if not user:
+            new_user_data = {
+                "email": email,
+                "username": name,
+                "avatar_url": picture,
+                "password_hash": "firebase_user",
+                "is_verified": True,
+                "firebase_uid": uid,
+            }
+            user = await user_service.create_user(User(**new_user_data), session)
+
+        access_token = create_access_tokens(
+            user_data={"email": user.email, "user_uid": str(user.id), "role": user.role}
+        )
+        refresh_token = create_access_tokens(
+            user_data={"email": user.email, "user_uid": str(user.id)},
+            refresh=True,
+            expiry=timedelta(days=REFRESH_TOKEN_EXPIRY),
+        )
+        return JSONResponse(
+            content={
+                "message": "Login Successful",
+                "access token": access_token,
+                "refresh token": refresh_token,
+                "user": {"email": user.email, "uid": str(user.id), "username": user.username},
+            }
+        )
+    except auth.InvalidIdTokenError:
+        raise HTTPException(status_code=401, detail="Invalid ID token")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Firebase login failed: {e}")
 
 
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
@@ -73,51 +107,6 @@ async def create_user_account(user_data: UserCreateModel,
         "message": "Account Created! Check email to verify your account",
         "user": new_user,
     }
-
-@auth_router.get("/login")
-async def login(request: Request):
-    url = request.url_for("auth/callback")
-    return await oauth.google.authorize_redirect(request, url)
-
-@auth_router.get("/auth/callback")
-async def auth_callback(request: Request, session: AsyncSession = Depends(get_session)):
-    try:
-        token = await oauth.google.authorize_access_token(request)
-        user_info = (await token.get("userinfo")).json()
-        print(user_info)
-
-        email = user_info["email"]
-        existing_user = await user_service.get_user_by_email(email, session)
-
-        if not existing_user:
-            # Create new user
-            new_user_data = {
-                "email": email,
-                "first_name": user_info.get("given_name"),
-                "last_name": user_info.get("family_name"), 
-                "avatar_url": user_info.get("picture"),
-                "password_hash": "oauth_user",
-                "username": user_info.get("name"),
-                "is_verified": True,
-            }
-
-            new_user = await user_service.create_user(User(**new_user_data), session)
-
-            return JSONResponse(content={"message": "User created", "user": new_user.dict()})
-        else:
-            # Update existing user
-            update_data = {
-                "first_name": user_info.get("given_name"),
-                "last_name": user_info.get("family_name"),
-                "avatar_url": user_info.get("picture"),
-                "username": user_info.get("name")
-            }
-            updated_user = await user_service.update_user(existing_user, update_data, session)
-            return JSONResponse(content={"message": "User updated", "user": updated_user.dict()})
-
-    except OAuthError as e:
-        logger.error(f"OAuth callback error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="OAuth callback failed")
 
 @auth_router.post("/login", status_code=status.HTTP_200_OK)
 async def login_user(user_login_data: UserLoginModel,
