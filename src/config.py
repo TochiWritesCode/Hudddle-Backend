@@ -20,18 +20,6 @@ class Settings(BaseSettings):
     USE_CREDENTIALS: bool = True
     VALIDATE_CERTS: bool = True
     DOMAIN: str
-    REDIRECT_URI: str
-    GOOGLE_CLIENT_ID: str
-    GOOGLE_CLIENT_SECRET: str
-    GOOGLE_ACCESS_TOKEN_URL: str
-    GOOGLE_AUTHORIZE_URL: str
-    GOOGLE_API_BASE_URL: str
-    GOOGLE_USERINFO_ENPOINT: str
-    GITHUB_CLIENT_ID: str
-    GITHUB_CLIENT_SECRET: str
-    GITHUB_AUTHORIZE_URL: str
-    GITHUB_ACCESS_TOKEN_URL: str
-    GITHUB_USERINFO_ENPOINT: str
 
     # Dynamically compute MONGO_URI after the class is instantiated
     @property
