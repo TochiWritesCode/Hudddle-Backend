@@ -21,15 +21,18 @@ import logging
 logger = logging.getLogger(__name__)
 
 oauth = OAuth()
+
 oauth.register(
-    name = "google",
-    server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration",
-    client_id = Config.GOOGLE_CLIENT_ID,
-    client_secret = Config.GOOGLE_CLIENT_SECRET,
-    client_kwargs = {
-        "scope": "email openid profile",
-        "redirect_url": Config.REDIRECT_URI
-    }
+    name="google",
+    client_id=Config.GOOGLE_CLIENT_ID,
+    client_secret=Config.GOOGLE_CLIENT_SECRET,
+    authorize_url="https://accounts.google.com/o/oauth2/auth",
+    authorize_params=None,
+    access_token_url="https://accounts.google.com/o/oauth2/token",
+    access_token_params=None,
+    refresh_token_url=None,
+    redirect_uri=Config.REDIRECT_URI,
+    client_kwargs={"scope": "openid profile email"},
 )
 
 auth_router = APIRouter() 
@@ -76,17 +79,26 @@ async def create_user_account(user_data: UserCreateModel,
 
 @auth_router.get("/login")
 async def login(request: Request):
-    url = request.url_for("auth/callback")
-    return await oauth.google.authorize_redirect(request, url)
+    redirect_uri = request.url_for("auth_callback")
+    print(redirect_uri)
+    return await oauth.google.authorize_redirect(request, redirect_uri)
 
-@auth_router.get("/auth/callback")
-async def auth_callback(request: Request, session: AsyncSession = Depends(get_session)):
+@auth_router.get("/auth/callback", name="auth_callback")
+async def auth_callback(
+    request: Request, session: AsyncSession = Depends(get_session)
+):
+    print("I'm here....")
     try:
         token = await oauth.google.authorize_access_token(request)
-        user_info = (await token.get("userinfo")).json()
-        print(user_info)
+        user_info = token.get("userinfo")
+        if not user_info:
+            raise HTTPException(status_code=400, detail="Failed to fetch user info")
 
-        email = user_info["email"]
+        email = user_info.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="Email not found in user info")
+
+        # Check if user exists
         existing_user = await user_service.get_user_by_email(email, session)
 
         if not existing_user:
@@ -100,9 +112,7 @@ async def auth_callback(request: Request, session: AsyncSession = Depends(get_se
                 "username": user_info.get("name"),
                 "is_verified": True,
             }
-
             new_user = await user_service.create_user(User(**new_user_data), session)
-
             return JSONResponse(content={"message": "User created", "user": new_user.dict()})
         else:
             # Update existing user
@@ -116,8 +126,7 @@ async def auth_callback(request: Request, session: AsyncSession = Depends(get_se
             return JSONResponse(content={"message": "User updated", "user": updated_user.dict()})
 
     except OAuthError as e:
-        logger.error(f"OAuth callback error: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="OAuth callback failed")
+        raise HTTPException(status_code=400, detail=str(e))
 
 @auth_router.post("/login", status_code=status.HTTP_200_OK)
 async def login_user(user_login_data: UserLoginModel,
