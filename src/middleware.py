@@ -42,5 +42,5 @@ def register_middleware(app: FastAPI):
     # TrustedHost middleware
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=["localhost", "127.0.0.1", "hudddle-backend-plum.vercel.app"],
+        allowed_hosts=["localhost", "127.0.0.1", "hudddle-backend-plum.vercel.app", "localhost:3000"],
     )
