@@ -81,10 +81,8 @@ async def create_user_account(user_data: UserCreateModel,
     if user_exists:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"User with email {email} already exist.")
     new_user = await user_service.create_user(user_data, session)
-    print(f"Email: {email}")
     
     token = create_url_safe_token({"email": email})
-    print(f"Token1: {token}")
 
     link = f"http://{Config.DOMAIN}/api/v1/auth/verify/{token}"
 
@@ -156,12 +154,10 @@ async def login_user(user_login_data: UserLoginModel,
  
 @auth_router.get("/verify/{token}")
 async def verify_user_account(token: str, session: AsyncSession = Depends(get_session)):
-    print(f"Token2: {token}")
     token_data = decode_url_safe_token(token)
     
 
     user_email = token_data.get("email")
-    print(f"Decoded email: {user_email}")
 
     if user_email:
         user = await user_service.get_user_by_email(user_email, session)
