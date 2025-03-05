@@ -6,6 +6,7 @@ from typing import Dict, Any
 from .schema import UserCreateModel
 from sqlmodel import select
 from .utils import generate_password_hash
+import logging
 
 
 class UserService:
