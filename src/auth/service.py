@@ -22,16 +22,22 @@ class UserService:
             return None
     
     async def get_user_by_email(self, email: str, session: AsyncSession):
+    try:
         statement = select(User).where(User.email == email)
         result = await session.exec(statement)
-        
         user_object = result.first()
         return user_object
- 
-    async def user_exists(self, email, session: AsyncSession):
+    except Exception as e:
+        logging.error(f"Error getting user by email: {e}")
+        return None
+
+async def user_exists(self, email, session: AsyncSession):
+    try:
         user_object = await self.get_user_by_email(email, session)
-        
         return user_object is not None
+    except Exception as e:
+        logging.error(f"Error checking if user exists: {e}")
+        return False
              
     async def create_user(self, user_data: UserCreateModel, session: AsyncSession):
         user_data_dict = user_data.model_dump()
