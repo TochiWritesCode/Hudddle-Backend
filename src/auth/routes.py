@@ -154,8 +154,8 @@ async def login_user(user_login_data: UserLoginModel,
  
 @auth_router.get("/verify/{token}")
 async def verify_user_account(token: str, session: AsyncSession = Depends(get_session)):
-
     token_data = decode_url_safe_token(token)
+    
 
     user_email = token_data.get("email")
 

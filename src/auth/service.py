@@ -6,6 +6,7 @@ from typing import Dict, Any
 from .schema import UserCreateModel
 from sqlmodel import select
 from .utils import generate_password_hash
+import logging
 
 
 class UserService:
@@ -22,16 +23,26 @@ class UserService:
             return None
     
     async def get_user_by_email(self, email: str, session: AsyncSession):
-        statement = select(User).where(User.email == email)
-        result = await session.exec(statement)
-        
-        user_object = result.first()
-        return user_object
- 
+        try:
+            logging.info(f"Getting user by email: {email}")
+            statement = select(User).where(User.email == email)
+            logging.info("Executing query...")
+            result = await session.exec(statement)
+            logging.info("Query executed.")
+            user_object = result.first()
+            logging.info(f"User found: {user_object}")
+            return user_object
+        except Exception as e:
+            logging.error(f"Error getting user by email: {e}")
+            return None
+
     async def user_exists(self, email, session: AsyncSession):
-        user_object = await self.get_user_by_email(email, session)
-        
-        return user_object is not None
+        try:
+            user_object = await self.get_user_by_email(email, session)
+            return user_object is not None
+        except Exception as e:
+            logging.error(f"Error checking if user exists: {e}")
+            return False
              
     async def create_user(self, user_data: UserCreateModel, session: AsyncSession):
         user_data_dict = user_data.model_dump()
