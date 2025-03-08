@@ -44,4 +44,7 @@ app.include_router(daily_challenge_router, prefix=f"/api/{version}/daily_challen
 app.include_router(achievement_router, prefix=f"/api/{version}/achievements", tags=['achievements'])
 
 
+@app.get("/")
+async def root():
+    return {"message": "Hudddle.io Backend services [Let's make remote work fun]. To view the documentation goto ==> /api/v1/docs"}
 
