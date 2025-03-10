@@ -71,7 +71,6 @@ async def firebase_login(id_token: str, session: AsyncSession = Depends(get_sess
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Firebase login failed: {e}")
 
-
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def create_user_account(user_data: UserCreateModel,
                               bg_tasks: BackgroundTasks,
@@ -79,9 +78,13 @@ async def create_user_account(user_data: UserCreateModel,
     email = user_data.email
     user_exists = await user_service.user_exists(email, session)
     if user_exists:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"User with email {email} already exist.")
-    new_user = await user_service.create_user(user_data, session)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"User with email {email} already exists.")
     
+    try:
+        new_user = await user_service.create_user(user_data, session)
+    except HTTPException as e:
+        raise e
+
     token = create_url_safe_token({"email": email})
 
     link = f"http://{Config.DOMAIN}/api/v1/auth/verify/{token}"
