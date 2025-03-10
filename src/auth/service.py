@@ -1,6 +1,6 @@
 from sqlmodel.ext.asyncio.session import AsyncSession
-from fastapi.exceptions import HTTPException
-from fastapi import status
+from fastapi import HTTPException, Depends, status
+from fastapi.responses import JSONResponse
 from src.db.models import User
 from typing import Dict, Any
 from .schema import UserCreateModel
@@ -29,9 +29,9 @@ class UserService:
             logging.info(f"Current event loop: {id(asyncio.get_running_loop())}")
             statement = select(User).where(User.email == email)
             logging.info("Executing query...")
-            result = await session.exec(statement)
+            result = await session.execute(statement)
             logging.info("Query executed.")
-            user_object = result.first()
+            user_object = result.scalars().first()
             logging.info(f"User found: {user_object}")
             return user_object
         except Exception as e:
@@ -67,6 +67,7 @@ class UserService:
             await session.commit()
         except Exception as e:
             await session.rollback()
+            logging.error(f"Error updating user: {e}")
             raise e
     
     
