@@ -154,31 +154,33 @@ async def login_user(user_login_data: UserLoginModel,
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Invalid Email or Password"
     )
- 
+
 @auth_router.get("/verify/{token}")
 async def verify_user_account(token: str, session: AsyncSession = Depends(get_session)):
-    token_data = decode_url_safe_token(token)
-    
+    try:
+        token_data = decode_url_safe_token(token)
+        user_email = token_data.get("email")
 
-    user_email = token_data.get("email")
+        if user_email:
+            user = await user_service.get_user_by_email(user_email, session)
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
 
-    if user_email:
-        user = await user_service.get_user_by_email(user_email, session)
-
-        if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-        await user_service.update_user(user, {"is_verified": True}, session)
+            await user_service.update_user(user, {"is_verified": True}, session)
+            return JSONResponse(
+                content={"message": "Account verified successfully"},
+                status_code=200,
+            )
 
         return JSONResponse(
-            content={"message": "Account verified successfully"},
-            status_code=status.HTTP_200_OK,
+            content={"message": "Error during verification"},
+            status_code=500,
         )
-
-    return JSONResponse(
-        content={"message": "Error occured during verification"},
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    )
+    except Exception as e:
+        logging.error(f"Error verifying user account: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    finally:
+        await session.close()
 
 @auth_router.get("/refresh_token")
 async def get_new_access_token(token_details:dict = Depends(RefreshTokenBearer())):
