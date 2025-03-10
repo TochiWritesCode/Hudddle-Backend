@@ -7,6 +7,7 @@ from .schema import UserCreateModel
 from sqlmodel import select
 from .utils import generate_password_hash
 import logging
+import asyncio
 from sqlalchemy.exc import IntegrityError
 
 class UserService:
@@ -21,10 +22,11 @@ class UserService:
         except Exception as e:
             print(f"Error getting user by Firebase UID: {e}")
             return None
-    
+
     async def get_user_by_email(self, email: str, session: AsyncSession):
         try:
             logging.info(f"Getting user by email: {email}")
+            logging.info(f"Current event loop: {id(asyncio.get_running_loop())}")
             statement = select(User).where(User.email == email)
             logging.info("Executing query...")
             result = await session.exec(statement)
@@ -56,14 +58,15 @@ class UserService:
             await session.rollback()
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"User with email {user_data.email} already exists.")
         return new_user
-        
-    async def update_user(self, user:User , user_data: dict,session:AsyncSession):
 
-        for k, v in user_data.items():
-            setattr(user, k, v)
-
-        await session.commit()
-
-        return user
+    async def update_user(self, user: User, user_data: dict, session: AsyncSession):
+        try:
+            for key, value in user_data.items():
+                setattr(user, key, value)
+            session.add(user)
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            raise e
     
     
