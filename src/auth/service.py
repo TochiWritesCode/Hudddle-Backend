@@ -7,7 +7,7 @@ from .schema import UserCreateModel
 from sqlmodel import select
 from .utils import generate_password_hash
 import logging
-
+from sqlalchemy.exc import IntegrityError
 
 class UserService:
     
@@ -43,15 +43,18 @@ class UserService:
         except Exception as e:
             logging.error(f"Error checking if user exists: {e}")
             return False
-             
+
     async def create_user(self, user_data: UserCreateModel, session: AsyncSession):
         user_data_dict = user_data.model_dump()
         new_user = User(**user_data_dict)
         new_user.password_hash = generate_password_hash(user_data_dict["password"])
         new_user.role = "user"
         session.add(new_user) 
-        await session.commit()
-        
+        try:
+            await session.commit()
+        except IntegrityError as e:
+            await session.rollback()
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"User with email {user_data.email} already exists.")
         return new_user
         
     async def update_user(self, user:User , user_data: dict,session:AsyncSession):
