@@ -70,91 +70,90 @@ async def firebase_login(id_token: str, session: AsyncSession = Depends(get_sess
         raise HTTPException(status_code=401, detail="Invalid ID token")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Firebase login failed: {e}")
+    finally:
+        await session.close()
 
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def create_user_account(user_data: UserCreateModel,
                               bg_tasks: BackgroundTasks,
                               session: AsyncSession = Depends(get_session)):
-    email = user_data.email
-    user_exists = await user_service.user_exists(email, session)
-    if user_exists:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"User with email {email} already exists.")
-    
     try:
+        email = user_data.email
+        user_exists = await user_service.user_exists(email, session)
+        if user_exists:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"User with email {email} already exists.")
+        
         new_user = await user_service.create_user(user_data, session)
-    except HTTPException as e:
-        raise e
 
-    token = create_url_safe_token({"email": email})
+        token = create_url_safe_token({"email": email})
+        link = f"http://{Config.DOMAIN}/api/v1/auth/verify/{token}"
+        html = f"""
+        <h1>Verify your Email</h1>
+        <p>Please click this <a href="{link}">link</a> to verify your email</p>
+        """
+        emails = [email]
+        subject = "Verify Your email"
+        message = create_message(recipients=emails, subject=subject, body=html)
+        bg_tasks.add_task(mail.send_message, message)
 
-    link = f"http://{Config.DOMAIN}/api/v1/auth/verify/{token}"
-
-    html = f"""
-    <h1>Verify your Email</h1>
-    <p>Please click this <a href="{link}">link</a> to verify your email</p>
-    """
-
-    emails = [email]
-
-    subject = "Verify Your email"
-    
-    message = create_message(
-        recipients=emails,
-        subject=subject,
-        body=html
-    )
-    
-    bg_tasks.add_task(mail.send_message, message)
-
-    return {
-        "message": "Account Created! Check email to verify your account",
-        "user": new_user,
-    }
+        return {
+            "message": "Account Created! Check email to verify your account",
+            "user": new_user,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await session.close()
 
 @auth_router.post("/login", status_code=status.HTTP_200_OK)
 async def login_user(user_login_data: UserLoginModel,
                               session: AsyncSession = Depends(get_session)):
-    email = user_login_data.email
-    password = user_login_data.password
-    
-    user = await user_service.get_user_by_email(email, session)
-    if user is not None:
-        password_valid = verify_password(password, user.password_hash)
+    try:
+        email = user_login_data.email
+        password = user_login_data.password
         
-        if password_valid:
-            access_token = create_access_tokens(
-                user_data={
-                    "email": user.email,
-                    "user_uid": str(user.id),
-                    "role": user.role
-                }
-            )
+        user = await user_service.get_user_by_email(email, session)
+        if user is not None:
+            password_valid = verify_password(password, user.password_hash)
             
-            refresh_token = create_access_tokens(
-                user_data={
-                    "email": user.email,
-                    "user_uid": str(user.id)
-                },
-                refresh=True,
-                expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
-            )
-            return JSONResponse(
-                content={
-                    "message": "Login Successfull",
-                    "access token": access_token,
-                    "refresh token": refresh_token,
-                    "user": {
+            if password_valid:
+                access_token = create_access_tokens(
+                    user_data={
                         "email": user.email,
-                        "uid": str(user.id),
-                        "username": user.username
+                        "user_uid": str(user.id),
+                        "role": user.role
                     }
-                }
-            )
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Invalid Email or Password"
-    )
-
+                )
+                
+                refresh_token = create_access_tokens(
+                    user_data={
+                        "email": user.email,
+                        "user_uid": str(user.id)
+                    },
+                    refresh=True,
+                    expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
+                )
+                return JSONResponse(
+                    content={
+                        "message": "Login Successfull",
+                        "access token": access_token,
+                        "refresh token": refresh_token,
+                        "user": {
+                            "email": user.email,
+                            "uid": str(user.id),
+                            "username": user.username
+                        }
+                    }
+                )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid Email or Password"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await session.close()
+        
 @auth_router.get("/verify/{token}")
 async def verify_user_account(token: str, session: AsyncSession = Depends(get_session)):
     try:
@@ -214,14 +213,21 @@ async def revoke_token(token_details: dict = Depends(AccessTokenBearer())):
     )
     
 @auth_router.get("/me", response_model=User)
-async def get_current_user(user = Depends(get_current_user), 
-                           _: bool = Depends(role_checker),
-                           session: AsyncSession = Depends(get_session)):
-    statement = select(User).where(User.id == user.id).options()
-    result = await session.exec(statement)
-    user = result.first()
-
-    return user
+async def get_current_user(
+    user: User = Depends(get_current_user), 
+    _: bool = Depends(role_checker),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        statement = select(User).where(User.id == user.id).options()
+        result = await session.exec(statement)
+        user = result.first()
+        return user
+    except Exception as e:
+        logging.error(f"Error fetching current user: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    finally:
+        await session.close()
     
 @auth_router.post("/password-reset-request")
 async def password_reset_request(email_data: PasswordResetRequestModel):
@@ -260,36 +266,39 @@ async def reset_account_password(
     passwords: PasswordResetConfirmModel,
     session: AsyncSession = Depends(get_session),
 ):
-    new_password = passwords.new_password
-    confirm_password = passwords.confirm_new_password
+    try:
+        new_password = passwords.new_password
+        confirm_password = passwords.confirm_new_password
 
-    if new_password != confirm_password:
-        raise HTTPException(
-            detail="Passwords do not match", status_code=status.HTTP_400_BAD_REQUEST
-        )
+        if new_password != confirm_password:
+            raise HTTPException(
+                detail="Passwords do not match", status_code=status.HTTP_400_BAD_REQUEST
+            )
 
-    token_data = decode_url_safe_token(token)
+        token_data = decode_url_safe_token(token)
+        user_email = token_data.get("email")
 
-    user_email = token_data.get("email")
+        if user_email:
+            user = await user_service.get_user_by_email(user_email, session)
+            if not user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    if user_email:
-        user = await user_service.get_user_by_email(user_email, session)
+            passwd_hash = generate_password_hash(new_password)
+            await user_service.update_user(user, {"password_hash": passwd_hash}, session)
 
-        if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-        passwd_hash = generate_password_hash(new_password)
-        await user_service.update_user(user, {"password_hash": passwd_hash}, session)
+            return JSONResponse(
+                content={"message": "Password reset Successfully"},
+                status_code=status.HTTP_200_OK,
+            )
 
         return JSONResponse(
-            content={"message": "Password reset Successfully"},
-            status_code=status.HTTP_200_OK,
+            content={"message": "Error occured during password reset."},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-
-    return JSONResponse(
-        content={"message": "Error occured during password reset."},
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await session.close()
     
 @auth_router.post("/send_mail")
 async def send_mail(emails: EmailModel,
@@ -316,7 +325,12 @@ async def update_user_profile(
     _: bool = Depends(role_checker),
     session: AsyncSession = Depends(get_session),
 ):
-    update_dict = update_data.dict(exclude_unset=True)
-
-    updated_user = await user_service.update_user(user, update_dict, session)
-    return updated_user
+    try:
+        update_dict = update_data.dict(exclude_unset=True)
+        updated_user = await user_service.update_user(user, update_dict, session)
+        return updated_user
+    except Exception as e:
+        logging.error(f"Error updating user profile: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    finally:
+        await session.close()
