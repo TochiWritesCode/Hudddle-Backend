@@ -17,6 +17,7 @@ from datetime import timedelta, datetime
 from .dependencies import RefreshTokenBearer, AccessTokenBearer, get_current_user, RoleChecker
 from src.db.mongo import add_jti_to_blocklist
 from src.config import Config
+import logging
 
 
 auth_router = APIRouter() 
