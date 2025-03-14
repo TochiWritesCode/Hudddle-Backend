@@ -8,13 +8,13 @@ from .achievements.routes import achievement_router
 from .middleware import register_middleware
 from contextlib import asynccontextmanager
 from src.db.main import init_db
-from src.db.mongo import initialize_mongo
+from src.db.mongo import initialize_blocklist
 
 @asynccontextmanager 
 async def life_span(app:FastAPI):
     print(f"Server is starting...")
     await init_db()
-    await initialize_mongo()
+    await initialize_blocklist()
     yield
     print(f"Server has been stopped")
 
