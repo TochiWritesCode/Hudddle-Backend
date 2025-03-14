@@ -31,7 +31,7 @@ class UserService:
             logging.info("Executing query...")
             result = await session.execute(statement)
             logging.info("Query executed.")
-            user_object = result.scalars().first()
+            user_object = result.first()
             logging.info(f"User found: {user_object}")
             return user_object
         except Exception as e:
