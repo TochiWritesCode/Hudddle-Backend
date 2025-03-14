@@ -1,3 +1,4 @@
+import asyncio
 from src.mail import mail, create_message
 import firebase_admin
 from firebase_admin import auth, credentials
@@ -158,6 +159,7 @@ async def login_user(user_login_data: UserLoginModel,
 @auth_router.get("/verify/{token}")
 async def verify_user_account(token: str, session: AsyncSession = Depends(get_session)):
     try:
+        logging.info(f"verify_user_account event loop: {id(asyncio.get_running_loop())}")
         token_data = decode_url_safe_token(token)
         user_email = token_data.get("email")
 
@@ -181,6 +183,7 @@ async def verify_user_account(token: str, session: AsyncSession = Depends(get_se
         raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         await session.close()
+        logging.info(f"verify_user_account session closed event loop: {id(asyncio.get_running_loop())}")
 
 @auth_router.get("/refresh_token")
 async def get_new_access_token(token_details:dict = Depends(RefreshTokenBearer())):

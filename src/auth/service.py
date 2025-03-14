@@ -39,6 +39,7 @@ class UserService:
             return None
 
     async def user_exists(self, email, session: AsyncSession):
+        logging.info(f"user_exists event loop: {id(asyncio.get_running_loop())}")
         try:
             user_object = await self.get_user_by_email(email, session)
             return user_object is not None
@@ -47,6 +48,7 @@ class UserService:
             return False
 
     async def create_user(self, user_data: UserCreateModel, session: AsyncSession):
+        logging.info(f"create_user event loop: {id(asyncio.get_running_loop())}")
         user_data_dict = user_data.model_dump()
         new_user = User(**user_data_dict)
         new_user.password_hash = generate_password_hash(user_data_dict["password"])
@@ -60,6 +62,7 @@ class UserService:
         return new_user
 
     async def update_user(self, user: User, user_data: dict, session: AsyncSession):
+        logging.info(f"update_user event loop: {id(asyncio.get_running_loop())}")
         try:
             for key, value in user_data.items():
                 setattr(user, key, value)

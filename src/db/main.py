@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlmodel import SQLModel
 from sqlalchemy.orm import sessionmaker
@@ -28,5 +30,7 @@ async def init_db():
 
 async def get_session() -> AsyncSession:
     """Dependency to get an async database session."""
+    logging.info(f"get_session event loop: {id(asyncio.get_running_loop())}")
     async with AsyncSessionLocal() as session:
         yield session
+        logging.info(f"get_session session closed event loop: {id(asyncio.get_running_loop())}")
