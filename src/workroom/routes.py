@@ -161,7 +161,7 @@ async def remove_members_from_workroom(
         WorkroomMemberLink.workroom_id == workroom_id,
         WorkroomMemberLink.user_id.in_(user_ids)
     )
-    result = await session.execute(stmt)
+    result = await session.exec(stmt)
     await session.commit()
     if result.rowcount == 0:
         return {"message": f"None of the users {user_ids} were members of workroom {workroom_id}"}

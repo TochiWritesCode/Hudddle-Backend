@@ -18,6 +18,7 @@ from .dependencies import RefreshTokenBearer, AccessTokenBearer, get_current_use
 from src.db.mongo import add_jti_to_blocklist
 from src.config import Config
 import logging
+import asyncio
 
 
 auth_router = APIRouter() 
@@ -95,7 +96,7 @@ async def create_user_account(user_data: UserCreateModel,
         emails = [email]
         subject = "Verify Your email"
         message = create_message(recipients=emails, subject=subject, body=html)
-        bg_tasks.add_task(mail.send_message, message)
+        asyncio.create_task(mail.send_message(message))
 
         return {
             "message": "Account Created! Check email to verify your account",
