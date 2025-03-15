@@ -1,4 +1,3 @@
-import asyncio
 from src.mail import mail, create_message
 import firebase_admin
 from firebase_admin import auth, credentials
@@ -159,7 +158,6 @@ async def login_user(user_login_data: UserLoginModel,
 @auth_router.get("/verify/{token}")
 async def verify_user_account(token: str, session: AsyncSession = Depends(get_session)):
     try:
-        logging.info(f"verify_user_account event loop: {id(asyncio.get_running_loop())}")
         token_data = decode_url_safe_token(token)
         user_email = token_data.get("email")
 
@@ -171,19 +169,18 @@ async def verify_user_account(token: str, session: AsyncSession = Depends(get_se
             await user_service.update_user(user, {"is_verified": True}, session)
             return JSONResponse(
                 content={"message": "Account verified successfully"},
-                status_code=200,
+                status_code=status.HTTP_200_OK,
             )
 
         return JSONResponse(
             content={"message": "Error during verification"},
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
     except Exception as e:
         logging.error(f"Error verifying user account: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         await session.close()
-        logging.info(f"verify_user_account session closed event loop: {id(asyncio.get_running_loop())}")
 
 @auth_router.get("/refresh_token")
 async def get_new_access_token(token_details:dict = Depends(RefreshTokenBearer())):
@@ -218,14 +215,11 @@ async def revoke_token(token_details: dict = Depends(AccessTokenBearer())):
     
 @auth_router.get("/me", response_model=User)
 async def get_current_user(
-    user: User = Depends(get_current_user), 
+    user = Depends(get_current_user), 
     _: bool = Depends(role_checker),
     session: AsyncSession = Depends(get_session),
 ):
     try:
-        statement = select(User).where(User.id == user.id).options()
-        result = await session.exec(statement)
-        user = result.first()
         return user
     except Exception as e:
         logging.error(f"Error fetching current user: {e}")

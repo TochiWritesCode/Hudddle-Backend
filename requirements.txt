@@ -1,6 +1,5 @@
 asyncpg
 authlib
-bcrypt
 celery
 fastapi
 fastapi-mail
@@ -9,7 +8,7 @@ firebase-admin
 itsdangerous
 motor
 openai
-passlib
+passlib[bcrypt]
 pydantic
 pydantic-settings
 pytest
