@@ -4,6 +4,7 @@ from firebase_admin import auth, credentials
 from fastapi import APIRouter, Depends, status, BackgroundTasks
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
+from fastapi_mail import FastMail, ConnectionConfig
 from src.db.models import User
 from .schema import (PasswordResetConfirmModel, PasswordResetRequestModel, 
                      UserCreateModel, UserLoginModel, EmailModel, UserUpdateModel)
@@ -18,7 +19,6 @@ from .dependencies import RefreshTokenBearer, AccessTokenBearer, get_current_use
 from src.db.mongo import add_jti_to_blocklist
 from src.config import Config
 import logging
-import asyncio
 
 
 auth_router = APIRouter() 
@@ -29,6 +29,23 @@ REFRESH_TOKEN_EXPIRY = 2
 # Initialize Firebase Admin SDK
 cred = credentials.Certificate("hudddle-project-firebase.json")
 firebase_admin.initialize_app(cred)
+
+mail_config = ConnectionConfig(
+    MAIL_USERNAME=Config.MAIL_USERNAME,
+    MAIL_PASSWORD=Config.MAIL_PASSWORD,
+    MAIL_FROM=Config.MAIL_FROM,
+    MAIL_PORT=Config.MAIL_PORT,
+    MAIL_SERVER=Config.MAIL_SERVER,
+    MAIL_FROM_NAME=Config.MAIL_FROM_NAME,
+    MAIL_STARTTLS=True,
+    MAIL_SSL_TLS=False,
+    USE_CREDENTIALS=True,
+    VALIDATE_CERTS=True,
+    # TEMPLATE_FOLDER=Path(BASE_DIR, "templates"),
+)
+
+async def get_mail():
+    return FastMail(config=mail_config)
 
 @auth_router.post("/firebase_login", status_code=status.HTTP_200_OK)
 async def firebase_login(id_token: str, session: AsyncSession = Depends(get_session)):
@@ -78,7 +95,8 @@ async def firebase_login(id_token: str, session: AsyncSession = Depends(get_sess
 @auth_router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def create_user_account(user_data: UserCreateModel,
                               bg_tasks: BackgroundTasks,
-                              session: AsyncSession = Depends(get_session)):
+                              session: AsyncSession = Depends(get_session),
+                              mail: FastMail = Depends(get_mail)):
     try:
         email = user_data.email
         user_exists = await user_service.user_exists(email, session)
@@ -96,7 +114,7 @@ async def create_user_account(user_data: UserCreateModel,
         emails = [email]
         subject = "Verify Your email"
         message = create_message(recipients=emails, subject=subject, body=html)
-        asyncio.create_task(mail.send_message(message))
+        bg_tasks.add_task(mail.send_message, message)
 
         return {
             "message": "Account Created! Check email to verify your account",
