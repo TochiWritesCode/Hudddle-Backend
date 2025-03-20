@@ -23,6 +23,7 @@
     "tests/**",
     "prisma/migrations/**",
     "Dockerfile",
+    "docker-compose.yml",
     "README.md",
     "pytest.ini",
     "package.json"
