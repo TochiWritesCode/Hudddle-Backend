@@ -13,4 +13,7 @@ pydantic
 pydantic-settings
 pytest
 pyjwt
-sqlmodel
+redis
+sqlalchemy
+uvicorn
+locust

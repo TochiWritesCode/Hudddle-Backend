@@ -1,264 +1,261 @@
-from sqlmodel import SQLModel, Field, Column, Relationship, String
-from typing import List, Optional
-from datetime import datetime, date
-from enum import Enum
-from sqlalchemy import DateTime
-from uuid import UUID, uuid4
+from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime, Enum, ARRAY, Boolean, Date
+from sqlalchemy.orm import relationship
 import sqlalchemy.dialects.postgresql as pg
-
-
+from datetime import datetime
+from enum import Enum as PyEnum
+from uuid import uuid4
+from .main import Base
 
 def create_datetime_column():
     return DateTime(timezone=False)
 
-class TaskStatus(str, Enum):
+class TaskStatus(str, PyEnum):
     TODO = "TODO"
     PENDING = "PENDING"
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
     
-class FriendRequestStatus(str, Enum):
+class FriendRequestStatus(str, PyEnum):
     pending = "pending"
     accepted = "accepted"
     rejected = "rejected"
     
-class LevelCategory(str, Enum):
+class LevelCategory(str, PyEnum):
     LEADER = "Leader"
     WORKAHOLIC = "Workaholic"
     TEAM_PLAYER = "Team Player"
     SLACKER = "Slacker"
 
-class LevelTier(str, Enum):
+class LevelTier(str, PyEnum):
     BEGINNER = "Beginner"
     INTERMEDIATE = "Intermediate"
     ADVANCED = "Advanced"
     EXPERT = "Expert"
 
-class UserLevel(SQLModel, table=True):
+class UserLevel(Base):
     __tablename__ = "user_levels"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    user_id: UUID = Field(foreign_key="users.id", nullable=False)
-    level_category: LevelCategory
-    level_tier: LevelTier
-    level_points: int = Field(default=0)
+    id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    level_category = Column(Enum(LevelCategory))
+    level_tier = Column(Enum(LevelTier))
+    level_points = Column(Integer, default=0)
 
-    user: "User" = Relationship(back_populates="levels")
+    user = relationship("User", back_populates="levels")
     
-class FriendLink(SQLModel, table=True):
+class FriendLink(Base):
     __tablename__ = "friend_links"
 
-    user_id: UUID = Field(foreign_key="users.id", primary_key=True)
-    friend_id: UUID = Field(foreign_key="users.id", primary_key=True)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
+    friend_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
     
     
-class WorkroomMemberLink(SQLModel, table=True):
+class WorkroomMemberLink(Base):
     __tablename__ = "workroom_member_links"
     
-    workroom_id: Optional[UUID] = Field(
-        default=None, foreign_key="workrooms.id", primary_key=True
-    )
-    user_id: Optional[UUID] = Field(
-        default=None, foreign_key="users.id", primary_key=True
-    )
+    workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id"), primary_key=True)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
     
-class TaskCollaborator(SQLModel, table=True):
+class TaskCollaborator(Base):
     __tablename__ = "task_collaborators"
 
-    task_id: UUID = Field(foreign_key="tasks.id", primary_key=True)
-    user_id: UUID = Field(foreign_key="users.id", primary_key=True)
-    invited_by_id: UUID = Field(foreign_key="users.id")
+    task_id = Column(pg.UUID(as_uuid=True), ForeignKey("tasks.id"), primary_key=True)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
+    invited_by_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"))
 
-    task: "Task" = Relationship(back_populates="collaborators")
-    invited_by: "User" = Relationship(
+    task = relationship("Task", back_populates="collaborators")
+    invited_by = relationship(
+        "User", 
         back_populates="task_collaborations_invited",
-        sa_relationship_kwargs={"foreign_keys": "TaskCollaborator.invited_by_id"}
+        foreign_keys=[invited_by_id]
     )
-    user: "User" = Relationship(
+    user = relationship(
+        "User", 
         back_populates="task_collaborations_user",
-        sa_relationship_kwargs={"foreign_keys": "TaskCollaborator.user_id"}
+        foreign_keys=[user_id]
     )
 
 
-class User(SQLModel, table=True):
+class User(Base):
     __tablename__ = "users"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+    id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    firebase_uid: Optional[str] = Field(default=None, index=True)
-    username: Optional[str] = Field(index=True, nullable=True)
-    email: str = Field(unique=True, index=True, nullable=False)
-    first_name: Optional[str] = Field(default=None)
-    last_name: Optional[str] = Field(default=None)
-    password_hash: str = Field(nullable=False)
-    role: str = Field(default="member", nullable=False)
-    xp: int = Field(default=0, nullable=False)
-    level: int = Field(default=1, nullable=False)
-    badges: List[str] = Field(default_factory=list, sa_column=Column(pg.ARRAY(String)))
-    avatar_url: Optional[str] = Field(default=None)
-    is_verified: bool = Field(default=False, nullable=False)
-    productivity: float = Field(default=0.0, nullable=False)
-    average_task_time: float = Field(default=0.0, nullable=False)
+    firebase_uid = Column(String, index=True, nullable=True)
+    username = Column(String, index=True, nullable=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+    password_hash = Column(String, nullable=False)
+    role = Column(String, default="member", nullable=False)
+    xp = Column(Integer, default=0, nullable=False)
+    level = Column(Integer, default=1, nullable=False)
+    badges = Column(ARRAY(String), default=[])
+    avatar_url = Column(String, nullable=True)
+    is_verified = Column(Boolean, default=False, nullable=False)
+    productivity = Column(Numeric, default=0.0, nullable=False)
+    average_task_time = Column(Numeric, default=0.0, nullable=False)
 
-    user_type: Optional[str] = Field(default=None)
-    find_us: Optional[str] = Field(default=None)
-    software_used: Optional[str] = Field(default=None)
+    user_type = Column(String, nullable=True)
+    find_us = Column(String, nullable=True)
+    software_used = Column(String, nullable=True)
 
-    workrooms: List["Workroom"] = Relationship(
-        back_populates="members", link_model=WorkroomMemberLink
+    workrooms = relationship(
+        "Workroom", 
+        secondary="workroom_member_links", 
+        back_populates="members"
     )
-    levels: List["UserLevel"] = Relationship(back_populates="user")
-    task_collaborations_invited: List["TaskCollaborator"] = Relationship(
+    levels = relationship("UserLevel", back_populates="user")
+    task_collaborations_invited = relationship(
+        "TaskCollaborator", 
         back_populates="invited_by",
-        sa_relationship_kwargs={"foreign_keys": "TaskCollaborator.invited_by_id"}
+        foreign_keys="[TaskCollaborator.invited_by_id]"
     )
-    task_collaborations_user: List["TaskCollaborator"] = Relationship(
+    task_collaborations_user = relationship(
+        "TaskCollaborator", 
         back_populates="user",
-        sa_relationship_kwargs={"foreign_keys": "TaskCollaborator.user_id"}
+        foreign_keys="[TaskCollaborator.user_id]"
     )
-    streak: Optional["UserStreak"] = Relationship(back_populates="user")
-    created_tasks: List["Task"] = Relationship(back_populates="created_by")
-    leaderboards: List["Leaderboard"] = Relationship(back_populates="user")
-    friends: List["User"] = Relationship(
-        link_model=FriendLink,
-        sa_relationship_kwargs={
-            "primaryjoin": "User.id==FriendLink.user_id",
-            "secondaryjoin": "User.id==FriendLink.friend_id",
-        }
+    streak = relationship("UserStreak", back_populates="user", uselist=False)
+    created_tasks = relationship("Task", back_populates="created_by")
+    leaderboards = relationship("Leaderboard", back_populates="user")
+    friends = relationship(
+        "User", 
+        secondary="friend_links", 
+        primaryjoin="User.id==FriendLink.user_id",
+        secondaryjoin="User.id==FriendLink.friend_id",
     )
     
     
-class FriendRequest(SQLModel, table=True):
+class FriendRequest(Base):
     __tablename__ = "friend_requests"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    sender_id: UUID = Field(foreign_key="users.id", nullable=False)
-    receiver_id: UUID = Field(foreign_key="users.id", nullable=False)
-    status: FriendRequestStatus = Field(
-        default=FriendRequestStatus.pending, nullable=False
-    )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    sender_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    receiver_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    status = Column(Enum(FriendRequestStatus), default=FriendRequestStatus.pending, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
 
-class Workroom(SQLModel, table=True):
+class Workroom(Base):
     __tablename__ = "workrooms"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+    id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    name: str = Field(index=True, nullable=False)
-    description: Optional[str] = Field(default=None)
-    created_by: UUID = Field(foreign_key="users.id", nullable=False)
+    name = Column(String, index=True, nullable=False)
+    description = Column(String, nullable=True)
+    created_by = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
-    members: List[User] = Relationship(
-        back_populates="workrooms", link_model=WorkroomMemberLink
+    members = relationship(
+        "User", 
+        secondary="workroom_member_links", 
+        back_populates="workrooms"
     )
-    tasks: List["Task"] = Relationship(back_populates="workroom")
-    leaderboards: List["Leaderboard"] = Relationship(back_populates="workroom")
+    tasks = relationship("Task", back_populates="workroom")
+    leaderboards = relationship("Leaderboard", back_populates="workroom")
 
 
-class Task(SQLModel, table=True):
+class Task(Base):
     __tablename__ = "tasks"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+    id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    title: str = Field(index=True, nullable=False)
-    description: Optional[str] = Field(default=None)
-    status: TaskStatus = Field(default=TaskStatus.PENDING, nullable=False)
-    due_date: Optional[datetime] = Field(default=None, description="Due date in UTC")
-    completed_at: Optional[datetime] = Field(default=None, sa_column=create_datetime_column())
-    collaborators: List["TaskCollaborator"] = Relationship(back_populates="task")
-    created_by_id: UUID = Field(foreign_key="users.id", nullable=False)
-    workroom_id: Optional[UUID] = Field(foreign_key="workrooms.id", default=None)
-    created_by: "User" = Relationship(back_populates="created_tasks")
-    workroom: Optional["Workroom"] = Relationship(back_populates="tasks")
+    title = Column(String, index=True, nullable=False)
+    description = Column(String, nullable=True)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
+    due_date = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    collaborators = relationship("TaskCollaborator", back_populates="task")
+    created_by_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id"), nullable=True)
+    created_by = relationship("User", back_populates="created_tasks")
+    workroom = relationship("Workroom", back_populates="tasks")
 
-class Achievement(SQLModel, table=True):
+class Achievement(Base):
     __tablename__ = "achievements"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+    id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    name: str = Field(index=True, nullable=False)
-    description: Optional[str] = Field(default=None)
-    xp_reward: int = Field(default=0, nullable=False)
-    badge_url: Optional[str] = Field(default=None)
+    name = Column(String, index=True, nullable=False)
+    description = Column(String, nullable=True)
+    xp_reward = Column(Integer, default=0, nullable=False)
+    badge_url = Column(String, nullable=True)
 
-class Leaderboard(SQLModel, table=True):
+class Leaderboard(Base):
     __tablename__ = "leaderboards"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+    id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    workroom_id: UUID = Field(foreign_key="workrooms.id", nullable=False)
-    user_id: UUID = Field(foreign_key="users.id", nullable=False)
-    score: int = Field(default=0, nullable=False)
-    teamwork_score: int = Field(default=0, nullable=False)
-    rank: Optional[int] = Field(default=None)
+    workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id"), nullable=False)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    score = Column(Integer, default=0, nullable=False)
+    teamwork_score = Column(Integer, default=0, nullable=False)
+    rank = Column(Integer, nullable=True)
 
-    workroom: Workroom = Relationship(back_populates="leaderboards")
-    user: User = Relationship(back_populates="leaderboards")
+    workroom = relationship("Workroom", back_populates="leaderboards")
+    user = relationship("User", back_populates="leaderboards")
 
-class DailyChallenge(SQLModel, table=True):
+class DailyChallenge(Base):
     __tablename__ = "daily_challenges"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+    id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    description: str = Field(index=True, nullable=False)
-    points: int = Field(default=0, nullable=False)
+    description = Column(String, index=True, nullable=False)
+    points = Column(Integer, default=0, nullable=False)
 
-class UserDailyChallenge(SQLModel, table=True):
+class UserDailyChallenge(Base):
     __tablename__ = "user_daily_challenges"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    user_id: UUID = Field(foreign_key="users.id", nullable=False)
-    daily_challenge_id: UUID = Field(foreign_key="daily_challenges.id", nullable=False)
-    accepted: bool = Field(default=False)
-    completed: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+    id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    daily_challenge_id = Column(pg.UUID(as_uuid=True), ForeignKey("daily_challenges.id"), nullable=False)
+    accepted = Column(Boolean, default=False)
+    completed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    user: "User" = Relationship()
-    daily_challenge: "DailyChallenge" = Relationship()
+    user = relationship("User")
+    daily_challenge = relationship("DailyChallenge")
     
     
-class UserStreak(SQLModel, table=True):
+class UserStreak(Base):
     __tablename__ = "user_streaks"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    user_id: UUID = Field(foreign_key="users.id", nullable=False)
-    current_streak: int = Field(default=0)
-    last_active_date: Optional[date] = Field(default=None)
-    highest_streak: int = Field(default=0)
+    id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    current_streak = Column(Integer, default=0)
+    last_active_date = Column(Date, nullable=True)
+    highest_streak = Column(Integer, default=0)
 
-    user: "User" = Relationship(back_populates="streak")
+    user = relationship("User", back_populates="streak")
 
 
-class Badge(SQLModel, table=True):
+class Badge(Base):
     __tablename__ = "badges"
 
-    id: UUID = Field(default_factory=uuid4, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=create_datetime_column())
+    id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    name: str = Field(index=True, nullable=False)
-    description: Optional[str] = Field(default=None)
-    image_url: Optional[str] = Field(default=None)
+    name = Column(String, index=True, nullable=False)
+    description = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
 
-class UserBadgeLink(SQLModel, table=True):
+class UserBadgeLink(Base):
     __tablename__ = "user_badge_links"
 
-    user_id: UUID = Field(foreign_key="users.id", primary_key=True)
-    badge_id: UUID = Field(foreign_key="badges.id", primary_key=True)
-
-    
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
+    badge_id = Column(pg.UUID(as_uuid=True), ForeignKey("badges.id"), primary_key=True)

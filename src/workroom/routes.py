@@ -1,15 +1,16 @@
 from fastapi import Body, APIRouter, HTTPException, Depends, status, Query
-from sqlmodel import select
+from sqlalchemy import select, delete
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.main import get_session
-from sqlmodel.ext.asyncio.session import AsyncSession
 from .service import update_workroom_leaderboard
-from .schema import WorkroomCreate, WorkroomTaskCreate, WorkroomUpdate
+from .schema import WorkroomCreate, WorkroomSchema, WorkroomTaskCreate, WorkroomUpdate
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from src.db.models import Workroom, User, Task, Leaderboard, TaskStatus, WorkroomMemberLink
 from src.auth.dependencies import get_current_user
+from src.auth.schema import UserSchema
+from src.tasks.schema import TaskSchema
 from datetime import datetime
-from sqlmodel import delete
 from sqlalchemy.orm import selectinload
 
 workroom_router = APIRouter()
@@ -28,15 +29,23 @@ async def create_workroom(
     session.add(new_workroom)
     await session.commit()
     await session.refresh(new_workroom)
+
+    # Add the creator as a member of the workroom
+    workroom_member_link = WorkroomMemberLink(
+        workroom_id=new_workroom.id,
+        user_id=current_user.id
+    )
+    session.add(workroom_member_link)
+    await session.commit()
     return new_workroom
 
-@workroom_router.get("", response_model=List[Workroom])
+@workroom_router.get("", response_model=List[WorkroomSchema])
 async def get_workrooms(session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
-    workrooms = await session.exec(select(Workroom).where(Workroom.created_by == current_user.id))
-    return workrooms.all()
+    result = await session.execute(select(Workroom).where(Workroom.created_by == current_user.id))
+    workrooms = result.scalars().all()
+    return workrooms
 
-
-@workroom_router.get("/{workroom_id}", response_model=Workroom)
+@workroom_router.get("/{workroom_id}", response_model=WorkroomSchema)
 async def get_workroom(
     workroom_id: UUID,
     session: AsyncSession = Depends(get_session),
@@ -49,7 +58,7 @@ async def get_workroom(
         raise HTTPException(status_code=403, detail="Not authorized to access this workroom")
     return workroom
 
-@workroom_router.patch("/{workroom_id}", response_model=Workroom)
+@workroom_router.patch("/{workroom_id}", response_model=WorkroomSchema)
 async def update_workroom(
     workroom_id: UUID,
     workroom_update: WorkroomUpdate,
@@ -81,7 +90,6 @@ async def delete_workroom(
     if workroom.created_by != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this workroom")
     await session.delete(workroom)
-    await session.flush()
     await session.commit()
     return {"message": "Workroom deleted successfully"}
 
@@ -95,8 +103,8 @@ async def add_members_to_workroom(
     current_user: User = Depends(get_current_user),
 ):
     statement = select(Workroom).options(selectinload(Workroom.members)).where(Workroom.id == workroom_id)
-    result = await session.exec(statement)
-    workroom = result.one_or_none()
+    result = await session.execute(statement)
+    workroom = result.scalars().first()
     if not workroom:
         raise HTTPException(status_code=404, detail="Workroom not found")
     if workroom.created_by != current_user.id:
@@ -113,8 +121,7 @@ async def add_members_to_workroom(
     await session.refresh(workroom)
     return workroom
 
-
-@workroom_router.get("/{workroom_id}/members", response_model=List[User])
+@workroom_router.get("/{workroom_id}/members", response_model=List[UserSchema])
 async def get_workroom_members(
     workroom_id: UUID,
     session: AsyncSession = Depends(get_session),
@@ -125,8 +132,8 @@ async def get_workroom_members(
         .options(selectinload(Workroom.members))
         .where(Workroom.id == workroom_id)
     )
-    result = await session.exec(statement)
-    workroom = result.one_or_none()
+    result = await session.execute(statement)
+    workroom = result.scalars().first()
     
     if not workroom:
         raise HTTPException(status_code=404, detail="Workroom not found")
@@ -147,8 +154,8 @@ async def remove_members_from_workroom(
         .options(selectinload(Workroom.members))
         .where(Workroom.id == workroom_id)
     )
-    result = await session.exec(statement)
-    workroom = result.one_or_none()
+    result = await session.execute(statement)
+    workroom = result.scalars().first()
 
     if not workroom:
         raise HTTPException(status_code=404, detail="Workroom not found")
@@ -161,23 +168,19 @@ async def remove_members_from_workroom(
         WorkroomMemberLink.workroom_id == workroom_id,
         WorkroomMemberLink.user_id.in_(user_ids)
     )
-    result = await session.exec(stmt)
+    await session.execute(stmt)
     await session.commit()
-    if result.rowcount == 0:
-        return {"message": f"None of the users {user_ids} were members of workroom {workroom_id}"}
-    
     return {"message": f"Users {user_ids} removed from workroom {workroom_id}"}
 
 # Task Management (Related to Workrooms)
 
-@workroom_router.get("/{workroom_id}/tasks", response_model=List[Task])
+@workroom_router.get("/{workroom_id}/tasks", response_model=List[TaskSchema])
 async def get_workroom_tasks(
     workroom_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
     status: Optional[TaskStatus] = Query(None, description="Filter by task status"),
     due_date: Optional[datetime] = Query(None, description="Filter by due date"),
-    # ... Add pagination parameters if needed
 ):
     workroom = await session.get(Workroom, workroom_id)
     if not workroom:
@@ -188,15 +191,15 @@ async def get_workroom_tasks(
     query = select(Task).where(Task.workroom_id == workroom_id)
 
     if status:
-      query = query.where(Task.status == status)
+        query = query.where(Task.status == status)
     if due_date:
-      query = query.where(Task.due_date == due_date)
+        query = query.where(Task.due_date == due_date)
 
-    tasks = await session.exec(query)
-    return tasks.all()
+    result = await session.execute(query)
+    tasks = result.scalars().all()
+    return tasks
 
-
-@workroom_router.post("/{workroom_id}/tasks", response_model=Task, status_code=status.HTTP_201_CREATED)
+@workroom_router.post("/{workroom_id}/tasks", response_model=TaskSchema, status_code=status.HTTP_201_CREATED)
 async def create_task_in_workroom(
     workroom_id: UUID,
     task_data: WorkroomTaskCreate,
@@ -219,8 +222,6 @@ async def create_task_in_workroom(
     await session.refresh(new_task)
     return new_task
 
-
-
 # Leaderboard Management (Related to Workrooms)
 
 @workroom_router.get("/{workroom_id}/leaderboard", response_model=List[Dict[str, Any]])
@@ -237,12 +238,12 @@ async def get_workroom_leaderboard(
 
     await update_workroom_leaderboard(workroom_id, session)
 
-    leaderboard_entries = await session.exec(select(Leaderboard).where(Leaderboard.workroom_id == workroom_id).order_by(Leaderboard.rank))
-    leaderboard_entries = leaderboard_entries.all()
+    result = await session.execute(select(Leaderboard).where(Leaderboard.workroom_id == workroom_id).order_by(Leaderboard.rank))
+    leaderboard_entries = result.scalars().all()
 
     return [{
         "user_id": entry.user_id,
-        "username": entry.user.user.username,
+        "username": entry.user.username,
         "score": entry.score,
         "teamwork_score": entry.teamwork_score,
         "rank": entry.rank,

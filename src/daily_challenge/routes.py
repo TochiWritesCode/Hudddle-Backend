@@ -4,7 +4,7 @@ from sqlmodel import Session, select
 from typing import List, Dict, Any
 from src.db.models import User, DailyChallenge, UserDailyChallenge, Task
 from src.db.main import get_session
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.dependencies import get_current_user
 from uuid import UUID
 from pydantic import BaseModel, Field
@@ -57,7 +57,7 @@ async def accept_daily_challenge(challenge_id: UUID, user: User = Depends(get_cu
     user_challenge = user_challenge.first()
     if not user_challenge:
         raise HTTPException(status_code=404, detail="Daily challenge not found")
-    user_challenge.accepted = True;
+    user_challenge.accepted = True
     challenge = await session.get(DailyChallenge, challenge_id)
     task = Task(title = challenge.description, created_by_id = user.id, description = "Daily Challenge")
     session.add(task)

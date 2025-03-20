@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     USE_CREDENTIALS: bool = True
     VALIDATE_CERTS: bool = True
     DOMAIN: str
+    CELERY_BROKER_URL: str
+    CELERY_RESULT_BACKEND: str
 
     # Dynamically compute MONGO_URI after the class is instantiated
     @property
