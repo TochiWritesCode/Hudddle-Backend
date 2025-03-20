@@ -2,14 +2,14 @@ from fastapi import Request, status, Depends
 from fastapi.security import HTTPBearer
 from fastapi.exceptions import HTTPException
 from fastapi.security.http import HTTPAuthorizationCredentials
-from .utils import decode_token
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.mongo import token_in_blocklist
 from src.db.main import get_session
-from .service import UserService
-from typing import Any, List
 from src.db.models import User
-from typing import Union
+from .utils import decode_token
+from .service import UserService
+from typing import Any, List, Union
+
 
 
 user_service = UserService()

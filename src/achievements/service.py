@@ -1,9 +1,8 @@
-from src.db.models import LevelCategory, LevelTier, Task, TaskCollaborator, TaskStatus, User, Badge, UserBadgeLink, UserLevel, UserStreak
-from fastapi import Depends
-from src.db.main import get_session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from src.db.models import (LevelCategory, LevelTier, Task, TaskCollaborator, TaskStatus, 
+                           User, Badge, UserBadgeLink, UserLevel, UserStreak)
 from datetime import date, timedelta
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select
 
 
 def determine_level_tier(points: int) -> LevelTier:
@@ -17,30 +16,30 @@ def determine_level_tier(points: int) -> LevelTier:
         return LevelTier.EXPERT
 
 
-async def award_badge(user: User, badge: Badge, session: AsyncSession = Depends(get_session)):
+async def award_badge(user: User, badge: Badge, session: AsyncSession):
     user_badge = UserBadgeLink(user_id=user.id, badge_id=badge.id)
     session.add(user_badge)
     await session.commit()
     await session.refresh(user_badge)
 
 # This needs a long logic
-async def check_and_award_badges(user: User, session: AsyncSession = Depends(get_session)):
+async def check_and_award_badges(user: User, session: AsyncSession):
     # Example: Award a badge for completing 10 tasks
-    completed_tasks_count = await session.exec(select(Task).where(Task.created_by_id == user.id, Task.status == TaskStatus.COMPLETED))
-    completed_tasks_count = len(completed_tasks_count.all())
+    completed_tasks_count = await session.execute(select(Task).where(Task.created_by_id == user.id, Task.status == TaskStatus.COMPLETED))
+    completed_tasks_count = len(completed_tasks_count.scalars().all())
     if completed_tasks_count >= 10:
-        badge = await session.exec(select(Badge).where(Badge.name == "Task Master"))
-        badge = badge.first()
+        badge = await session.execute(select(Badge).where(Badge.name == "Task Master"))
+        badge = badge.scalar()
         if badge:
             # Check if the user already has the badge
-            user_has_badge = await session.exec(select(UserBadgeLink).where(UserBadgeLink.user_id == user.id, UserBadgeLink.badge_id == badge.id))
-            if not user_has_badge.first():
+            user_has_badge = await session.execute(select(UserBadgeLink).where(UserBadgeLink.user_id == user.id, UserBadgeLink.badge_id == badge.id))
+            if not user_has_badge.scalar():
                 await award_badge(user, badge, session)
 
 
-async def get_or_create_user_level(category: LevelCategory, user_id, session: AsyncSession = Depends(get_session)) -> UserLevel:
-    user_level = await session.exec(select(UserLevel).where(UserLevel.user_id == user_id, UserLevel.level_category == category))
-    user_level = user_level.first()
+async def get_or_create_user_level(category: LevelCategory, user_id, session: AsyncSession) -> UserLevel:
+    user_level = await session.execute(select(UserLevel).where(UserLevel.user_id == user_id, UserLevel.level_category == category))
+    user_level = user_level.scalar()
     if not user_level:
         user_level = UserLevel(user_id=user_id, level_category=category, level_tier=LevelTier.BEGINNER)
         session.add(user_level)
@@ -48,7 +47,7 @@ async def get_or_create_user_level(category: LevelCategory, user_id, session: As
         await session.refresh(user_level)
     return user_level
 
-async def update_user_level(category: LevelCategory, points: int, user_id, session: AsyncSession = Depends(get_session)):
+async def update_user_level(category: LevelCategory, points: int, user_id, session: AsyncSession):
     user_level = await get_or_create_user_level(category, user_id, session)
     user_level.level_points += points
     user_level.level_tier = determine_level_tier(user_level.level_points)
@@ -57,62 +56,62 @@ async def update_user_level(category: LevelCategory, points: int, user_id, sessi
 
 # --- Activity Tracking and Point Calculation ---
 
-async def calculate_leader_points(user_id, session: AsyncSession = Depends(get_session)):
+async def calculate_leader_points(user_id, session: AsyncSession):
     # Task creation: 5 points per task.
-    tasks_created = await session.exec(select(Task).where(Task.created_by_id == user_id))
-    task_creation_points = len(tasks_created.all()) * 5
+    tasks_created = await session.execute(select(Task).where(Task.created_by_id == user_id))
+    task_creation_points = len(tasks_created.scalars().all()) * 5
 
     # Task delegation: 10 points per successful delegation. (Needs more complex logic)
-    #Delegation logic is not implemented.
+    # Delegation logic is not implemented.
     delegation_points = 0
 
     return task_creation_points + delegation_points
 
-async def calculate_workaholic_points(user_id, session: AsyncSession = Depends(get_session)):
+async def calculate_workaholic_points(user_id, session: AsyncSession):
     # Task completion: 3 points per task.
-    tasks_completed = await session.exec(select(Task).where(Task.created_by_id == user_id, Task.status == "COMPLETED"))
-    task_completion_points = len(tasks_completed.all()) * 3
+    tasks_completed = await session.execute(select(Task).where(Task.created_by_id == user_id, Task.status == TaskStatus.COMPLETED))
+    task_completion_points = len(tasks_completed.scalars().all()) * 3
 
     # On-time completion: 2 bonus points. (Needs completed_at and due_date)
     on_time_completion_points = 0
-    tasks = tasks_completed.all()
+    tasks = tasks_completed.scalars().all()
     for task in tasks:
         if task.due_date and task.completed_at and task.completed_at <= task.due_date:
             on_time_completion_points += 2
 
     return task_completion_points + on_time_completion_points
 
-async def calculate_team_player_points(user_id, session: AsyncSession = Depends(get_session)):
+async def calculate_team_player_points(user_id, session: AsyncSession):
     # Task collaboration: 5 points per collaboration.
-    collaborations = await session.exec(select(TaskCollaborator).where(TaskCollaborator.user_id == user_id))
-    collaboration_points = len(collaborations.all()) * 5
+    collaborations = await session.execute(select(TaskCollaborator).where(TaskCollaborator.user_id == user_id))
+    collaboration_points = len(collaborations.scalars().all()) * 5
 
     # Accepting collaboration invite: 3 points.
-    invites_accepted = await session.exec(select(TaskCollaborator).where(TaskCollaborator.user_id == user_id, TaskCollaborator.invited_by_id != user_id))
-    invite_points = len(invites_accepted.all()) * 3
+    invites_accepted = await session.execute(select(TaskCollaborator).where(TaskCollaborator.user_id == user_id, TaskCollaborator.invited_by_id != user_id))
+    invite_points = len(invites_accepted.scalars().all()) * 3
 
     return collaboration_points + invite_points
 
-async def calculate_slacker_points(user_id, session: AsyncSession = Depends(get_session)):
+async def calculate_slacker_points(user_id, session: AsyncSession):
     # Task completion below 20%: -5 points.
-    tasks_created = await session.exec(select(Task).where(Task.created_by_id == user_id))
-    tasks_completed = await session.exec(select(Task).where(Task.created_by_id == user_id, Task.status == "COMPLETED"))
+    tasks_created = await session.execute(select(Task).where(Task.created_by_id == user_id))
+    tasks_completed = await session.execute(select(Task).where(Task.created_by_id == user_id, Task.status == TaskStatus.COMPLETED))
 
-    created_count = len(tasks_created.all())
-    completed_count = len(tasks_completed.all())
+    created_count = len(tasks_created.scalars().all())
+    completed_count = len(tasks_completed.scalars().all())
     if created_count > 0 and (completed_count / created_count) < 0.2:
         task_completion_points = -5
     else:
-      task_completion_points = 0
+        task_completion_points = 0
     # Daily active time below 1 hour: -3 points. (Needs activity tracking)
-    #activity tracking is not implemented.
+    # Activity tracking is not implemented.
     active_time_points = 0
 
     return task_completion_points + active_time_points
 
 # --- Level Update Logic ---
 
-async def update_user_levels(user_id, session: AsyncSession = Depends(get_session)):
+async def update_user_levels(user_id, session: AsyncSession):
     leader_points = await calculate_leader_points(user_id, session)
     workaholic_points = await calculate_workaholic_points(user_id, session)
     team_player_points = await calculate_team_player_points(user_id, session)
@@ -124,10 +123,10 @@ async def update_user_levels(user_id, session: AsyncSession = Depends(get_sessio
     await update_user_level(LevelCategory.SLACKER, slacker_points, user_id, session)
 
 
-async def update_user_streak(user_id, session: AsyncSession = Depends(get_session)):
+async def update_user_streak(user_id, session: AsyncSession):
     today = date.today()
-    user_streak = await session.exec(select(UserStreak).where(UserStreak.user_id == user_id))
-    user_streak = user_streak.first()
+    user_streak = await session.execute(select(UserStreak).where(UserStreak.user_id == user_id))
+    user_streak = user_streak.scalar()
     if not user_streak:
         user_streak = UserStreak(user_id=user_id)
         session.add(user_streak)

@@ -1,12 +1,9 @@
-from fastapi import Depends
-from src.db.main import get_session
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from datetime import timedelta, datetime, date
 from typing import List
 from uuid import UUID
 from src.db.models import Task, TaskCollaborator, TaskStatus, User
-from src.auth.dependencies import get_current_user
 
 
 def calculate_task_points(task: Task) -> int:
@@ -30,21 +27,32 @@ def calculate_task_points(task: Task) -> int:
         base_points = 0
     return max(0, base_points)
 
-async def check_daily_completion(current_user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> bool:
+
+async def check_daily_completion(current_user: User, session: AsyncSession) -> bool:
     today = date.today()
     start_of_day = datetime.combine(today, datetime.min.time())
     end_of_day = datetime.combine(today, datetime.max.time())
 
-    pending_tasks = await session.exec(
-        select(Task).where(
-            Task.created_by_id == current_user.id,
-            Task.created_at >= start_of_day,
-            Task.created_at <= end_of_day,
-            Task.status != TaskStatus.COMPLETED,
-        )
+    # Use SQLAlchemy's `select` instead of SQLModel's `select`
+    stmt = select(Task).where(
+        Task.created_by_id == current_user.id,
+        Task.created_at >= start_of_day,
+        Task.created_at <= end_of_day,
+        Task.status != TaskStatus.COMPLETED,
     )
-    return not pending_tasks.all()
+    result = await session.execute(stmt)
+    pending_tasks = result.scalars().all()
 
-async def get_friends_working_on_task(task_id: UUID, current_user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> List[UUID]:
-    friends_on_task = await session.exec(select(TaskCollaborator.user_id).where(TaskCollaborator.task_id == task_id, TaskCollaborator.user_id != current_user.id))
-    return [friend.user_id for friend in friends_on_task]
+    return not pending_tasks
+
+
+async def get_friends_working_on_task(task_id: UUID, current_user: User, session: AsyncSession) -> List[UUID]:
+    # Use SQLAlchemy's `select` instead of SQLModel's `select`
+    stmt = select(TaskCollaborator.user_id).where(
+        TaskCollaborator.task_id == task_id,
+        TaskCollaborator.user_id != current_user.id,
+    )
+    result = await session.execute(stmt)
+    friends_on_task = result.scalars().all()
+
+    return list(friends_on_task)

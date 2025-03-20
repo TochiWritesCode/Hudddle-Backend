@@ -1,19 +1,21 @@
 from datetime import datetime
-from sqlmodel import select
 from fastapi import APIRouter, HTTPException, Depends
-from src.db.main import get_session
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from typing import List
 from uuid import UUID
 from src.db.models import FriendLink, FriendRequest, FriendRequestStatus, User
+from .schema import FriendRequestSchema
+from src.auth.schema import UserSchema
 from src.auth.dependencies import get_current_user
+from src.db.main import get_session
 
 friend_router = APIRouter()
 
 # Friend Endpoints
 
-@friend_router.post("/friend-requests", response_model=FriendRequest)
+@friend_router.post("/friend-requests", response_model=FriendRequestSchema)
 async def send_friend_request(
     receiver_id: UUID,
     session: AsyncSession = Depends(get_session),
@@ -27,6 +29,9 @@ async def send_friend_request(
     friend_request = FriendRequest(
         sender_id=current_user.id,
         receiver_id=receiver_id,
+        status=FriendRequestStatus.pending,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
     )
     session.add(friend_request)
     await session.commit()
@@ -61,20 +66,19 @@ async def accept_friend_request(
     return {"message": "Friend request accepted."}
 
 
-@friend_router.get("/friends", response_model=List[User])
+@friend_router.get("/friends", response_model=List[UserSchema])
 async def get_current_user_friends(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    statement = (
+    # Fetch the current user with their friends loaded
+    result = await session.execute(
         select(User)
         .options(selectinload(User.friends))
         .where(User.id == current_user.id)
     )
-    result = await session.exec(statement)
-    user = result.one_or_none()
+    user = result.scalars().first()
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user.friends
-

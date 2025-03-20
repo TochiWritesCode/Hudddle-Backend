@@ -1,6 +1,32 @@
 from pydantic import BaseModel, Field, EmailStr, validator
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
+from uuid import UUID
 from datetime import datetime
+
+class UserSchema(BaseModel):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    firebase_uid: Optional[str] = None
+    username: Optional[str] = None
+    email: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    password_hash: str
+    role: str
+    xp: int
+    level: int
+    badges: List[str]
+    avatar_url: Optional[str] = None
+    is_verified: bool
+    productivity: float
+    average_task_time: float
+    user_type: Optional[str] = None
+    find_us: Optional[str] = None
+    software_used: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 # User Creation Schema
 class UserCreateModel(BaseModel):

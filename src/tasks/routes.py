@@ -1,20 +1,19 @@
 from fastapi import APIRouter, HTTPException, Depends, status
-from src.db.main import get_session
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import select, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_
 from datetime import datetime, date
 from typing import List
 from uuid import UUID
+from src.db.main import get_session
 from src.achievements.service import check_and_award_badges, update_user_streak
 from .service import calculate_task_points, check_daily_completion, get_friends_working_on_task
-from .schema import TaskCreate, TaskUpdate
-from src.db.models import FriendLink, Task, TaskCollaborator, TaskStatus, User, Workroom
+from .schema import TaskCreate, TaskSchema, TaskUpdate
+from src.db.models import FriendLink, Task, TaskCollaborator, TaskStatus, User, Workroom, WorkroomMemberLink
 from src.auth.dependencies import get_current_user
 
 task_router = APIRouter()
 
 # Task Endpoints
-
 
 @task_router.post("/{task_id}/invite-friend/{friend_id}", status_code=status.HTTP_201_CREATED)
 async def invite_friend_to_task(
@@ -32,22 +31,22 @@ async def invite_friend_to_task(
         raise HTTPException(status_code=404, detail="Friend not found")
 
     # Check if they are friends
-    friendship_check = await session.exec(
+    friendship_check = await session.execute(
         select(FriendLink).where(
             (FriendLink.user_id == current_user.id) & (FriendLink.friend_id == friend_id)
         )
     )
-    if not friendship_check.first():
+    if not friendship_check.scalar():
         raise HTTPException(status_code=400, detail="Users are not friends")
 
     # Check if the friend is already invited
-    existing_collaboration = await session.exec(
+    existing_collaboration = await session.execute(
         select(TaskCollaborator).where(
             TaskCollaborator.task_id == task_id,
             TaskCollaborator.user_id == friend_id,
         )
     )
-    if existing_collaboration.first():
+    if existing_collaboration.scalar():
         raise HTTPException(status_code=400, detail="Friend is already invited to this task")
 
     # Create the collaboration
@@ -61,13 +60,13 @@ async def invite_friend_to_task(
     await session.refresh(collaboration)
     return {"message": f"Friend {friend.username} invited to task {task.title}"}
 
-@task_router.get("/api/tasks", response_model=List[Task])
+@task_router.get("/api/tasks", response_model=List[TaskSchema])
 async def get_tasks(session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
-    tasks = await session.exec(select(Task).where(Task.created_by_id == current_user.id))
-    tasks = tasks.all()
+    result = await session.execute(select(Task).where(Task.created_by_id == current_user.id))
+    tasks = result.scalars().all()
     return tasks
 
-@task_router.get("/api/tasks/{task_id}", response_model=Task)
+@task_router.get("/api/tasks/{task_id}", response_model=TaskSchema)
 async def get_task(task_id: UUID, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
     task = await session.get(Task, task_id)
     if not task:
@@ -76,7 +75,7 @@ async def get_task(task_id: UUID, session: AsyncSession = Depends(get_session), 
         raise HTTPException(status_code=403, detail="Not authorized to access this task")
     return task
 
-@task_router.post("/api/tasks", response_model=Task)
+@task_router.post("/api/tasks", response_model=TaskSchema)
 async def create_task(
     task_data: TaskCreate,
     session: AsyncSession = Depends(get_session),
@@ -90,9 +89,23 @@ async def create_task(
                 status_code=400,
                 detail=f"Workroom with ID {task_data.workroom_id} does not exist."
             )
+            
+        # Check if the current user is a member of the workroom
+        is_member = await session.execute(
+            select(WorkroomMemberLink)
+            .where(
+                WorkroomMemberLink.workroom_id == task_data.workroom_id,
+                WorkroomMemberLink.user_id == current_user.id
+            )
+        )
+        if not is_member.scalar():
+            raise HTTPException(
+                status_code=403,
+                detail="You are not a member of this workroom."
+            )
 
     # Convert TaskCreate to Task and set created_by_id
-    task_data_dict = task_data.model_dump()
+    task_data_dict = task_data.dict()
     new_task = Task(**task_data_dict)
     new_task.created_by_id = current_user.id
 
@@ -103,7 +116,7 @@ async def create_task(
 
     return new_task
 
-@task_router.put("/api/tasks/{task_id}", response_model=Task)
+@task_router.put("/api/tasks/{task_id}", response_model=TaskSchema)
 async def update_task(
     task_id: UUID,
     task_update: TaskUpdate,
@@ -148,8 +161,8 @@ async def update_task(
 
         # Daily Task Completion Bonus
         if await check_daily_completion(current_user.id, session):
-            today_tasks = await session.exec(select(Task).where(Task.created_by_id == current_user.id, and_(Task.created_at >= datetime.combine(date.today(), datetime.min.time()), Task.created_at <= datetime.combine(date.today(), datetime.max.time())), Task.status == TaskStatus.COMPLETED))
-            current_user.xp += (len(today_tasks.all()) * 2) + 10
+            today_tasks = await session.execute(select(Task).where(Task.created_by_id == current_user.id, and_(Task.created_at >= datetime.combine(date.today(), datetime.min.time()), Task.created_at <= datetime.combine(date.today(), datetime.max.time()), Task.status == TaskStatus.COMPLETED)))
+            current_user.xp += (len(today_tasks.scalars().all()) * 2) + 10
 
         session.add(current_user)
         # Call check_and_award_badges after updating xp
@@ -172,8 +185,5 @@ async def delete_task(task_id: UUID, session: AsyncSession = Depends(get_session
     if task.created_by_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this task")
     await session.delete(task)
-    await session.flush()
     await session.commit()
     return {"message": "Task deleted successfully"}
-
-
