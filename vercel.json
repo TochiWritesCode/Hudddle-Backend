@@ -1,31 +1,15 @@
 {
-  "builds": [
-    {
-      "src": "src/__init__.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "app/(.*)",
-      "dest": "src/__init__.py"
-    }
-  ],
-  "excludeFiles": [
-    "**/*.pyc",
-    "**/__pycache__/**",
-    ".env",
-    ".git/**",
-    ".venv/**",
-    "automations/**",
-    "docs/**",
-    "logdir/**",
-    "tests/**",
-    "prisma/migrations/**",
-    "Dockerfile",
-    "docker-compose.yml",
-    "README.md",
-    "pytest.ini",
-    "package.json"
-  ]
+    "version": 2,
+    "builds": [
+        {
+            "src": "src/__init__.py",
+            "use": "@vercel/python"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/(.*)",
+            "dest": "src/__init__.py"
+        }
+    ]
 }
