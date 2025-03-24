@@ -157,8 +157,8 @@ async def login_user(
                 return JSONResponse(
                     content={
                         "message": "Login Successful",
-                        "access token": access_token,
-                        "refresh token": refresh_token,
+                        "access_token": access_token,
+                        "refresh_token": refresh_token,
                         "user": {
                             "email": user.email,
                             "uid": str(user.id),
