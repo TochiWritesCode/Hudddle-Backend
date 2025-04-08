@@ -139,6 +139,18 @@ class FriendRequest(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+class WorkroomLiveSession(Base):
+    __tablename__ = "workroom_live_sessions"
+    
+    id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
+    workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    ended_at = Column(DateTime, nullable=True)
+    screen_sharer_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    is_active = Column(Boolean, default=True)
+    
+    workroom = relationship("Workroom", back_populates="live_sessions")
+    screen_sharer = relationship("User")
 
 class Workroom(Base):
     __tablename__ = "workrooms"
@@ -158,6 +170,7 @@ class Workroom(Base):
     )
     tasks = relationship("Task", back_populates="workroom")
     leaderboards = relationship("Leaderboard", back_populates="workroom")
+    live_sessions = relationship("WorkroomLiveSession", back_populates="workroom")
 
 
 class Task(Base):
@@ -170,6 +183,9 @@ class Task(Base):
     title = Column(String, index=True, nullable=False)
     description = Column(String, nullable=True)
     status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
+    is_recurring = Column(Boolean, default=False, nullable=False)
+    category = Column(String, nullable=True)
+    task_tools = Column(pg.ARRAY(String), nullable=True)
     due_date = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     collaborators = relationship("TaskCollaborator", back_populates="task")
