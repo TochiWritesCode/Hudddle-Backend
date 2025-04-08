@@ -1,17 +1,21 @@
 from fastapi import Body, APIRouter, HTTPException, Depends, status, Query
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from src.db.main import get_session
 from .service import update_workroom_leaderboard
 from .schema import WorkroomCreate, WorkroomSchema, WorkroomTaskCreate, WorkroomUpdate
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from src.db.models import Workroom, User, Task, Leaderboard, TaskStatus, WorkroomMemberLink
+from src.db.models import Workroom, User, Task, Leaderboard, TaskStatus, WorkroomMemberLink, WorkroomLiveSession
 from src.auth.dependencies import get_current_user
 from src.auth.schema import UserSchema
 from src.tasks.schema import TaskSchema
 from datetime import datetime
-from sqlalchemy.orm import selectinload
+from src.manager import WebSocketManager
+
+manager = WebSocketManager()
+
 
 workroom_router = APIRouter()
 
@@ -248,3 +252,118 @@ async def get_workroom_leaderboard(
         "teamwork_score": entry.teamwork_score,
         "rank": entry.rank,
     } for entry in leaderboard_entries]
+
+
+@workroom_router.get("/{workroom_id}/live-session", response_model=Dict)
+async def get_live_session_info(
+    workroom_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Get information about active live session in workroom"""
+    # Verify workroom access
+    workroom = await session.get(Workroom, workroom_id)
+    if not workroom:
+        raise HTTPException(status_code=404, detail="Workroom not found")
+        
+    if not await manager.verify_workroom_access(str(current_user.id), str(workroom_id), session):
+        raise HTTPException(status_code=403, detail="No access to this workroom")
+    
+    # Get live session info
+    live_session = await manager.get_or_create_live_session(str(workroom_id), session)
+    
+    # Get participants
+    participants = []
+    for user_id in manager.active_connections.get(str(workroom_id), {}).keys():
+        user_data = await manager.get_user_data(user_id, session)
+        participants.append(user_data)
+    
+    # Get screen sharer data if any
+    screen_sharer_data = None
+    if live_session.screen_sharer_id:
+        screen_sharer_data = await manager.get_user_data(live_session.screen_sharer_id, session)
+    
+    return {
+        "session_id": str(live_session.id),
+        "is_active": live_session.is_active,
+        "screen_sharer": screen_sharer_data,
+        "participants": participants,
+        "started_at": live_session.created_at.isoformat() if live_session.created_at else None,
+        "workroom_id": str(workroom_id)
+    }
+
+@workroom_router.post("/{workroom_id}/start-live-session", status_code=status.HTTP_201_CREATED)
+async def start_live_session(
+    workroom_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Start a new live session in workroom"""
+    # Verify workroom access
+    workroom = await session.get(Workroom, workroom_id)
+    if not workroom:
+        raise HTTPException(status_code=404, detail="Workroom not found")
+        
+    if not await manager.verify_workroom_access(str(current_user.id), str(workroom_id), session):
+        raise HTTPException(status_code=403, detail="No access to this workroom")
+    
+    # Create or get existing session
+    live_session = await manager.get_or_create_live_session(str(workroom_id), session)
+    
+    return {
+        "session_id": str(live_session.id),
+        "message": "Live session started",
+        "workroom_id": str(workroom_id)
+    }
+
+@workroom_router.post("/{workroom_id}/end-live-session")
+async def end_live_session(
+    workroom_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """End the active live session in workroom"""
+    # Verify workroom access and ownership
+    workroom = await session.get(Workroom, workroom_id)
+    if not workroom:
+        raise HTTPException(status_code=404, detail="Workroom not found")
+        
+    if workroom.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Only workroom creator can end session")
+    
+    # End session
+    await manager.end_live_session(str(workroom_id), session)
+    
+    return {
+        "message": "Live session ended",
+        "workroom_id": str(workroom_id)
+    }
+    
+@workroom_router.post("/{workroom_id}/request-access")
+async def request_workroom_access(
+    workroom_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    """Request access to a workroom"""
+    workroom = await session.get(Workroom, workroom_id)
+    if not workroom:
+        raise HTTPException(status_code=404, detail="Workroom not found")
+    
+    # Check if already a member
+    result = await session.execute(
+        select(WorkroomMemberLink)
+        .where(
+            WorkroomMemberLink.workroom_id == workroom_id,
+            WorkroomMemberLink.user_id == current_user.id
+        )
+    )
+    if result.scalars().first():
+        raise HTTPException(status_code=400, detail="Already a member of this workroom")
+    
+    # Here you would typically:
+    # 1. Create a notification for the workroom owner
+    # 2. Send an email to the owner
+    # 3. Log the access request
+    
+    return {"message": "Access request sent to workroom owner"}

@@ -1,10 +1,15 @@
+from itsdangerous import URLSafeTimedSerializer
+from sqlalchemy import select
+from fastapi import WebSocket, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 from src.config import Config
+from src.db.models import User
 import logging
 import jwt
 import uuid
-from itsdangerous import URLSafeTimedSerializer
 
 
 password_context = CryptContext(
@@ -67,4 +72,45 @@ def decode_url_safe_token(token:str):
     
     except Exception as e:
         logging.error(str(e))
+
+async def get_current_user_websocket(
+    websocket: WebSocket,
+    token: str,
+    session: AsyncSession
+) -> Optional[User]:
+    """Authenticate user via WebSocket connection"""
+    credentials_exception = None
+    
+    try:
+        payload = jwt.decode(jwt=token, key=Config.JWT_SECRET_KEY, algorithms=[Config.JWT_ALGORITHM])
         
+        # Extract user_id from nested structure
+        user_data = payload.get("user", {})
+        user_id: str = user_data.get("user_uid")
+        
+        if user_id is None:
+            credentials_exception = "Invalid token - user ID not found"
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return None
+            
+        # Verify user exists
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalars().first()
+        if user is None:
+            credentials_exception = "User not found"
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return None
+        
+        return user
+    except Exception as e:
+        print("Token expired")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+    except Exception as e:
+        print(f"JWTError: {e}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None

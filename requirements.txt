@@ -1,5 +1,6 @@
 asyncpg
 authlib
+alembic
 celery
 fastapi
 fastapi-mail
@@ -13,6 +14,8 @@ pydantic
 pydantic-settings
 pytest
 pyjwt
+python-socketio
+websockets
 redis
 sqlalchemy
 uvicorn

@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 from .auth.routes import auth_router
+from .auth.utils import get_current_user_websocket
 from .daily_challenge.routes import daily_challenge_router
 from .tasks.routes import task_router
 from .friend.routes import friend_router
@@ -9,6 +11,10 @@ from .middleware import register_middleware
 from contextlib import asynccontextmanager
 from src.db.main import init_db
 from src.db.mongo import initialize_blocklist
+from .manager import WebSocketManager
+from src.db.main import get_session
+
+manager = WebSocketManager()
 
 @asynccontextmanager 
 async def life_span(app:FastAPI):
@@ -48,3 +54,29 @@ app.include_router(achievement_router, prefix=f"/api/{version}/achievements", ta
 async def root():
     return {"message": "Hudddle.io Backend services [Let's make remote work fun]. To view the documentation goto ==> /api/v1/docs"}
 
+@app.websocket("/api/v1/workrooms/{workroom_id}/ws")
+async def workroom_websocket_endpoint(
+    websocket: WebSocket,
+    workroom_id: str,
+    token: str = Query(...),
+    session: AsyncSession = Depends(get_session)
+):
+    # Authenticate user
+    user = await get_current_user_websocket(websocket, token, session)
+    if not user:
+        return
+        
+    try:
+        # Connect to workroom
+        await manager.connect(websocket, workroom_id, str(user.id), session)
+        
+        # Handle messages
+        while True:
+            data = await websocket.receive_json()
+            await manager.handle_message(data, workroom_id, str(user.id), session)
+            
+    except WebSocketDisconnect:
+        await manager.disconnect(websocket, workroom_id, str(user.id), session)
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        await manager.disconnect(websocket, workroom_id, str(user.id), session)
