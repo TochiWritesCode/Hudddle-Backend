@@ -104,7 +104,7 @@ async def create_user_account(
         new_user = await user_service.create_user(user_data, session)
 
         token = create_url_safe_token({"email": email})
-        link = f"http://{Config.DOMAIN}/api/v1/auth/verify/{token}"
+        link = f"https://{Config.DOMAIN}/api/v1/auth/verify/{token}"
         html = f"""
         <h1>Verify your Email</h1>
         <p>Please click this <a href="{link}">link</a> to verify your email</p>
@@ -157,8 +157,8 @@ async def login_user(
                 return JSONResponse(
                     content={
                         "message": "Login Successful",
-                        "access token": access_token,
-                        "refresh token": refresh_token,
+                        "access_token": access_token,
+                        "refresh_token": refresh_token,
                         "user": {
                             "email": user.email,
                             "uid": str(user.id),
