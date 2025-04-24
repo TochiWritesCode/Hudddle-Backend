@@ -15,16 +15,28 @@ friend_router = APIRouter()
 
 # Friend Endpoints
 
-@friend_router.post("/friend-requests", response_model=FriendRequestSchema)
+@friend_router.post("/friends/request", response_model=FriendRequestSchema)
 async def send_friend_request(
     receiver_id: UUID,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
+    # Prevent sending friend request to oneself
+    if current_user.id == receiver_id:
+        raise HTTPException(status_code=400, detail="You cannot send a friend request to yourself.")
+    
     # Check that the receiver exists
     receiver = await session.get(User, receiver_id)
     if not receiver:
         raise HTTPException(status_code=404, detail="Receiver not found")
+    
+    # Check if a friend request already exists between the users
+    existing_request = await session.query(FriendRequest).filter(
+        ((FriendRequest.sender_id == current_user.id) & (FriendRequest.receiver_id == receiver_id)) |
+        ((FriendRequest.sender_id == receiver_id) & (FriendRequest.receiver_id == current_user.id))
+    ).first()
+    if existing_request:
+        raise HTTPException(status_code=409, detail="Friend request already pending or users are already friends.")
 
     friend_request = FriendRequest(
         sender_id=current_user.id,
@@ -38,8 +50,7 @@ async def send_friend_request(
     await session.refresh(friend_request)
     return friend_request
 
-
-@friend_router.post("/friend-requests/{request_id}/accept")
+@friend_router.post("/friends/request/{request_id}/accept")
 async def accept_friend_request(
     request_id: UUID,
     session: AsyncSession = Depends(get_session),
@@ -65,7 +76,6 @@ async def accept_friend_request(
     await session.commit()
     return {"message": "Friend request accepted."}
 
-
 @friend_router.get("/friends", response_model=List[UserSchema])
 async def get_current_user_friends(
     session: AsyncSession = Depends(get_session),
@@ -82,3 +92,18 @@ async def get_current_user_friends(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user.friends
+
+@friend_router.get("/friends/search", response_model=UserSchema)
+async def get_friend_by_email(
+    email: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Retrieves user data based on the provided email address.
+    """
+    result = await session.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User with email '{email}' not found")
+    return user

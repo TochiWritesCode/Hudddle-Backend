@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, status, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import timedelta, datetime
-from typing import Annotated
 import logging
 
 # Import SQLAlchemy models and utilities
@@ -223,14 +222,28 @@ async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer(
 
 
 @auth_router.get("/logout")
-async def revoke_token(token_details: dict = Depends(AccessTokenBearer())):
-    jti = token_details["jti"]
-    await add_jti_to_blocklist(jti)
+async def revoke_token(token_details: dict = Depends(AccessTokenBearer()), 
+                       session: AsyncSession = Depends(get_session)):
+    try:
+        jti = token_details.get("jti")
+        
+        if not jti:
+            raise HTTPException(status_code=400, detail="JTI not found in token")
+        
+        await add_jti_to_blocklist(jti)
 
-    return JSONResponse(
-        content={"message": "Logged out Successfully"},
-        status_code=status.HTTP_200_OK,
-    )
+        return JSONResponse(
+            content={"message": "Logged out Successfully"},
+            status_code=status.HTTP_200_OK,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        print(f"Error during logout: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error during logout")
+    finally:
+        await session.close()
 
 
 @auth_router.get("/me")

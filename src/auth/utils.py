@@ -10,6 +10,7 @@ from src.db.models import User
 import logging
 import jwt
 import uuid
+from jwt.exceptions import ExpiredSignatureError, DecodeError
 
 
 password_context = CryptContext(
@@ -20,7 +21,7 @@ serializer = URLSafeTimedSerializer(
     secret_key=Config.JWT_SECRET_KEY, salt="email-verification"
 )
 
-ACCESS_TOKEN_EXPIRY = 3600
+ACCESS_TOKEN_EXPIRY = 360000
 
 def generate_password_hash(password: str) -> str:
     hash = password_context.hash(password)
@@ -54,8 +55,14 @@ def decode_token(token: str) -> dict:
             algorithms=[Config.JWT_ALGORITHM]
         )
         return token_data
+    except ExpiredSignatureError:
+        logging.info("Token has expired")
+        return None
+    except DecodeError:
+        logging.info("Invalid token format")
+        return None
     except jwt.PyJWTError as e:
-        logging.exception(e)
+        logging.exception(f"Other JWT error: {e}")
         return None
     
 def create_url_safe_token(data: dict):
@@ -102,11 +109,15 @@ async def get_current_user_websocket(
             return None
         
         return user
-    except Exception as e:
+    except ExpiredSignatureError:
         print("Token expired")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return None
-    except Exception as e:
+    except DecodeError:
+        print("Invalid token format")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return None
+    except jwt.PyJWTError as e:
         print(f"JWTError: {e}")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return None

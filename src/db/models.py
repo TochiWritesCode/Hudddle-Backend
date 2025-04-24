@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime, Enum, ARRAY, Boolean, Date
 from sqlalchemy.orm import relationship
 import sqlalchemy.dialects.postgresql as pg
-from datetime import datetime
+from datetime import datetime, date, time
 from enum import Enum as PyEnum
 from uuid import uuid4
 from .main import Base
@@ -10,9 +10,8 @@ def create_datetime_column():
     return DateTime(timezone=False)
 
 class TaskStatus(str, PyEnum):
-    TODO = "TODO"
     PENDING = "PENDING"
-    IN_PROGRESS = "IN_PROGRESS"
+    OVERDUE = "OVERDUE"
     COMPLETED = "COMPLETED"
     
 class FriendRequestStatus(str, PyEnum):
@@ -36,7 +35,7 @@ class UserLevel(Base):
     __tablename__ = "user_levels"
 
     id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
-    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
     level_category = Column(Enum(LevelCategory))
     level_tier = Column(Enum(LevelTier))
     level_points = Column(Integer, default=0)
@@ -46,22 +45,22 @@ class UserLevel(Base):
 class FriendLink(Base):
     __tablename__ = "friend_links"
 
-    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
-    friend_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), primary_key=True)
+    friend_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), primary_key=True)
     
     
 class WorkroomMemberLink(Base):
     __tablename__ = "workroom_member_links"
     
-    workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id"), primary_key=True)
-    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
+    workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id", ondelete='CASCADE'), primary_key=True)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), primary_key=True)
     
 class TaskCollaborator(Base):
     __tablename__ = "task_collaborators"
 
-    task_id = Column(pg.UUID(as_uuid=True), ForeignKey("tasks.id"), primary_key=True)
-    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
-    invited_by_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"))
+    task_id = Column(pg.UUID(as_uuid=True), ForeignKey("tasks.id", ondelete='CASCADE'), primary_key=True)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), primary_key=True)
+    invited_by_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'))
 
     task = relationship("Task", back_populates="collaborators")
     invited_by = relationship(
@@ -97,30 +96,36 @@ class User(Base):
     is_verified = Column(Boolean, default=False, nullable=False)
     productivity = Column(Numeric, default=0.0, nullable=False)
     average_task_time = Column(Numeric, default=0.0, nullable=False)
+    daily_active_minutes = Column(Integer, default=0)
+    last_activity_start = Column(DateTime, nullable=True)
+    teamwork_collaborations = Column(Integer, default=0)
+    daily_teamwork_collaborations = Column(Integer, default=0)
 
     user_type = Column(String, nullable=True)
     find_us = Column(String, nullable=True)
-    software_used = Column(String, nullable=True)
+    software_used = Column(ARRAY(String), nullable=True)
 
     workrooms = relationship(
         "Workroom", 
         secondary="workroom_member_links", 
         back_populates="members"
     )
-    levels = relationship("UserLevel", back_populates="user")
+    levels = relationship("UserLevel", back_populates="user", cascade="all, delete-orphan")
     task_collaborations_invited = relationship(
         "TaskCollaborator", 
         back_populates="invited_by",
-        foreign_keys="[TaskCollaborator.invited_by_id]"
+        foreign_keys="[TaskCollaborator.invited_by_id]",
+        cascade="all, delete-orphan"
     )
     task_collaborations_user = relationship(
         "TaskCollaborator", 
         back_populates="user",
-        foreign_keys="[TaskCollaborator.user_id]"
+        foreign_keys="[TaskCollaborator.user_id]",
+        cascade="all, delete-orphan"
     )
     streak = relationship("UserStreak", back_populates="user", uselist=False)
-    created_tasks = relationship("Task", back_populates="created_by")
-    leaderboards = relationship("Leaderboard", back_populates="user")
+    created_tasks = relationship("Task", back_populates="created_by", cascade="all, delete-orphan")
+    leaderboards = relationship("Leaderboard", back_populates="user", cascade="all, delete-orphan")
     friends = relationship(
         "User", 
         secondary="friend_links", 
@@ -133,8 +138,8 @@ class FriendRequest(Base):
     __tablename__ = "friend_requests"
 
     id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
-    sender_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    receiver_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    sender_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
+    receiver_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
     status = Column(Enum(FriendRequestStatus), default=FriendRequestStatus.pending, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -143,10 +148,10 @@ class WorkroomLiveSession(Base):
     __tablename__ = "workroom_live_sessions"
     
     id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
-    workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id"), nullable=False)
+    workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id", ondelete='CASCADE'), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     ended_at = Column(DateTime, nullable=True)
-    screen_sharer_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    screen_sharer_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='SET NULL'), nullable=True)
     is_active = Column(Boolean, default=True)
     
     workroom = relationship("Workroom", back_populates="live_sessions")
@@ -161,16 +166,16 @@ class Workroom(Base):
 
     name = Column(String, index=True, nullable=False)
     description = Column(String, nullable=True)
-    created_by = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_by = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
 
     members = relationship(
         "User", 
         secondary="workroom_member_links", 
         back_populates="workrooms"
     )
-    tasks = relationship("Task", back_populates="workroom")
-    leaderboards = relationship("Leaderboard", back_populates="workroom")
-    live_sessions = relationship("WorkroomLiveSession", back_populates="workroom")
+    tasks = relationship("Task", back_populates="workroom", cascade="all, delete-orphan")
+    leaderboards = relationship("Leaderboard", back_populates="workroom", cascade="all, delete-orphan")
+    live_sessions = relationship("WorkroomLiveSession", back_populates="workroom", cascade="all, delete-orphan")
 
 
 class Task(Base):
@@ -180,17 +185,20 @@ class Task(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    title = Column(String, index=True, nullable=False)
-    description = Column(String, nullable=True)
-    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
     is_recurring = Column(Boolean, default=False, nullable=False)
+    title = Column(String, index=True, nullable=False)
+    duration = Column(String, nullable=True)
     category = Column(String, nullable=True)
     task_tools = Column(pg.ARRAY(String), nullable=True)
-    due_date = Column(DateTime, nullable=True)
+    deadline = Column(DateTime, default=datetime.combine(date.today(), time(23, 59, 59)), nullable=True)
+    due_by = Column(DateTime, default=datetime.combine(date.today(), datetime.now().time().replace(microsecond=0)), nullable=True)
+    task_point = Column(Integer, default=10, nullable=False)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
+    workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id", ondelete='SET NULL'), nullable=True)
     completed_at = Column(DateTime, nullable=True)
-    collaborators = relationship("TaskCollaborator", back_populates="task")
-    created_by_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id"), nullable=True)
+    created_by_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
+
+    collaborators = relationship("TaskCollaborator", back_populates="task", cascade="all, delete-orphan")
     created_by = relationship("User", back_populates="created_tasks")
     workroom = relationship("Workroom", back_populates="tasks")
 
@@ -213,8 +221,8 @@ class Leaderboard(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id"), nullable=False)
-    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id", ondelete='CASCADE'), nullable=False)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
     score = Column(Integer, default=0, nullable=False)
     teamwork_score = Column(Integer, default=0, nullable=False)
     rank = Column(Integer, nullable=True)
@@ -236,8 +244,8 @@ class UserDailyChallenge(Base):
     __tablename__ = "user_daily_challenges"
 
     id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
-    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    daily_challenge_id = Column(pg.UUID(as_uuid=True), ForeignKey("daily_challenges.id"), nullable=False)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
+    daily_challenge_id = Column(pg.UUID(as_uuid=True), ForeignKey("daily_challenges.id", ondelete='CASCADE'), nullable=False)
     accepted = Column(Boolean, default=False)
     completed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -251,10 +259,10 @@ class UserStreak(Base):
     __tablename__ = "user_streaks"
 
     id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
-    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    current_streak = Column(Integer, default=0)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
+    current_streak = Column(Integer, default=1)
     last_active_date = Column(Date, nullable=True)
-    highest_streak = Column(Integer, default=0)
+    highest_streak = Column(Integer, default=1)
 
     user = relationship("User", back_populates="streak")
 
@@ -273,5 +281,5 @@ class Badge(Base):
 class UserBadgeLink(Base):
     __tablename__ = "user_badge_links"
 
-    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
-    badge_id = Column(pg.UUID(as_uuid=True), ForeignKey("badges.id"), primary_key=True)
+    user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), primary_key=True)
+    badge_id = Column(pg.UUID(as_uuid=True), ForeignKey("badges.id", ondelete='CASCADE'), primary_key=True)

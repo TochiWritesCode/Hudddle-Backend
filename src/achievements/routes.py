@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from datetime import date
 from typing import List, Dict, Any
 from src.db.models import Badge, UserBadgeLink, UserLevel, UserStreak, User
 from .schema import BadgeSchema
@@ -71,8 +72,9 @@ async def get_user_streak(
 ):
     result = await session.execute(select(UserStreak).where(UserStreak.user_id == user.id))
     user_streak = result.scalars().first()
+    today = date.today()
     if not user_streak:
-        return {"current_streak": 0, "highest_streak": 0, "last_active_date": None}
+        return {"current_streak": 1, "highest_streak": 1, "last_active_date": today}
     return {
         "current_streak": user_streak.current_streak,
         "highest_streak": user_streak.highest_streak,
