@@ -41,7 +41,7 @@ class UserUpdateModel(BaseModel):
     username: Optional[str] = None
     user_type: Optional[str] = None
     find_us: Optional[str] = None
-    software_used: Optional[str] = None
+    software_used: Optional[List[str]] = None
     productivity: Optional[float] = None 
     average_task_time: Optional[float] = None
     

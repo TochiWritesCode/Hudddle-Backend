@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime, Enum, ARRAY, Boolean, Date
 from sqlalchemy.orm import relationship
 import sqlalchemy.dialects.postgresql as pg
-from datetime import datetime
+from datetime import datetime, date, time
 from enum import Enum as PyEnum
 from uuid import uuid4
 from .main import Base
@@ -10,9 +10,8 @@ def create_datetime_column():
     return DateTime(timezone=False)
 
 class TaskStatus(str, PyEnum):
-    TODO = "TODO"
     PENDING = "PENDING"
-    IN_PROGRESS = "IN_PROGRESS"
+    OVERDUE = "OVERDUE"
     COMPLETED = "COMPLETED"
     
 class FriendRequestStatus(str, PyEnum):
@@ -97,10 +96,14 @@ class User(Base):
     is_verified = Column(Boolean, default=False, nullable=False)
     productivity = Column(Numeric, default=0.0, nullable=False)
     average_task_time = Column(Numeric, default=0.0, nullable=False)
+    daily_active_minutes = Column(Integer, default=0)
+    last_activity_start = Column(DateTime, nullable=True)
+    teamwork_collaborations = Column(Integer, default=0)
+    daily_teamwork_collaborations = Column(Integer, default=0)
 
     user_type = Column(String, nullable=True)
     find_us = Column(String, nullable=True)
-    software_used = Column(String, nullable=True)
+    software_used = Column(ARRAY(String), nullable=True)
 
     workrooms = relationship(
         "Workroom", 
@@ -182,17 +185,20 @@ class Task(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    title = Column(String, index=True, nullable=False)
-    description = Column(String, nullable=True)
-    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
     is_recurring = Column(Boolean, default=False, nullable=False)
+    title = Column(String, index=True, nullable=False)
+    duration = Column(String, nullable=True)
     category = Column(String, nullable=True)
     task_tools = Column(pg.ARRAY(String), nullable=True)
-    due_date = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
-    collaborators = relationship("TaskCollaborator", back_populates="task", cascade="all, delete-orphan")
-    created_by_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
+    deadline = Column(DateTime, default=datetime.combine(date.today(), time(23, 59, 59)), nullable=True)
+    due_by = Column(DateTime, default=datetime.combine(date.today(), datetime.now().time().replace(microsecond=0)), nullable=True)
+    task_point = Column(Integer, default=10, nullable=False)
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING, nullable=False)
     workroom_id = Column(pg.UUID(as_uuid=True), ForeignKey("workrooms.id", ondelete='SET NULL'), nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_by_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
+
+    collaborators = relationship("TaskCollaborator", back_populates="task", cascade="all, delete-orphan")
     created_by = relationship("User", back_populates="created_tasks")
     workroom = relationship("Workroom", back_populates="tasks")
 
@@ -254,9 +260,9 @@ class UserStreak(Base):
 
     id = Column(pg.UUID(as_uuid=True), default=uuid4, primary_key=True)
     user_id = Column(pg.UUID(as_uuid=True), ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
-    current_streak = Column(Integer, default=0)
+    current_streak = Column(Integer, default=1)
     last_active_date = Column(Date, nullable=True)
-    highest_streak = Column(Integer, default=0)
+    highest_streak = Column(Integer, default=1)
 
     user = relationship("User", back_populates="streak")
 

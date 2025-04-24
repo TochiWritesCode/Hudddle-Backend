@@ -60,13 +60,13 @@ async def invite_friend_to_task(
     await session.refresh(collaboration)
     return {"message": f"Friend {friend.username} invited to task {task.title}"}
 
-@task_router.get("/api/tasks", response_model=List[TaskSchema])
+@task_router.get("", response_model=List[TaskSchema])
 async def get_tasks(session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
     result = await session.execute(select(Task).where(Task.created_by_id == current_user.id))
     tasks = result.scalars().all()
     return tasks
 
-@task_router.get("/api/tasks/{task_id}", response_model=TaskSchema)
+@task_router.get("/{task_id}", response_model=TaskSchema)
 async def get_task(task_id: UUID, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
     task = await session.get(Task, task_id)
     if not task:
@@ -75,7 +75,7 @@ async def get_task(task_id: UUID, session: AsyncSession = Depends(get_session), 
         raise HTTPException(status_code=403, detail="Not authorized to access this task")
     return task
 
-@task_router.post("/api/tasks", response_model=TaskSchema)
+@task_router.post("", response_model=TaskSchema)
 async def create_task(
     task_data: TaskCreate,
     session: AsyncSession = Depends(get_session),
@@ -116,7 +116,7 @@ async def create_task(
 
     return new_task
 
-@task_router.put("/api/tasks/{task_id}", response_model=TaskSchema)
+@task_router.put("/{task_id}", response_model=TaskSchema)
 async def update_task(
     task_id: UUID,
     task_update: TaskUpdate,
@@ -177,7 +177,7 @@ async def update_task(
 
     return task
 
-@task_router.delete("/api/tasks/{task_id}")
+@task_router.delete("/{task_id}")
 async def delete_task(task_id: UUID, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)):
     task = await session.get(Task, task_id)
     if not task:

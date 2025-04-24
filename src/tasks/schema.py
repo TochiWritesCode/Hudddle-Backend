@@ -9,12 +9,14 @@ class TaskSchema(BaseModel):
     created_at: datetime
     updated_at: datetime
     title: str
-    description: Optional[str] = None
+    duration: Optional[str] = None
     is_recurring: bool
     status: TaskStatus
     category: Optional[str] = None
     task_tools: Optional[List[str]] = None
-    due_date: Optional[datetime] = None
+    deadline: Optional[datetime] = None
+    due_by: Optional[datetime] = None
+    task_point: int                  
     completed_at: Optional[datetime] = None
     created_by_id: UUID
     workroom_id: Optional[UUID] = None
@@ -33,20 +35,25 @@ class TaskCollaboratorSchema(BaseModel):
 
 class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1, description="Title of the task")
-    description: Optional[str] = None
+    duration: Optional[str] = None
     status: TaskStatus = TaskStatus.PENDING
     is_recurring: bool = False
-    due_date: Optional[datetime] = None
+    deadline: Optional[datetime] = None
+    due_by: Optional[datetime] = None
+    task_point: int = 10            
     workroom_id: Optional[UUID] = None
     category: Optional[str] = None
     task_tools: Optional[List[str]] = None
     
 class TaskUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, description="Title of the task")
-    description: Optional[str] = None
+    duration: Optional[str] = None   
     status: Optional[TaskStatus] = None
-    is_recurring: bool = False
-    due_date: Optional[datetime] = None
+    is_recurring: Optional[bool] = None
+    deadline: Optional[datetime] = None
+    due_by: Optional[datetime] = None
+    task_point: Optional[int] = None
     workroom_id: Optional[UUID] = None
     category: Optional[str] = None
     task_tools: Optional[List[str]] = None
+    
